@@ -47,9 +47,9 @@
         <EmbedUntrackedSources>true</EmbedUntrackedSources>
         <SymbolPackageFormat>snupkg</SymbolPackageFormat>
         <RepositoryType>Git</RepositoryType>
-        <Version>$([System.IO.File]::ReadAllText("$(SolutionDir)version.txt"))</Version>
-        <PackageVersion>$([System.IO.File]::ReadAllText("$(SolutionDir)version.txt"))</PackageVersion>
-        <AssemblyVersion>$([System.IO.File]::ReadAllText("$(SolutionDir)version.txt"))</AssemblyVersion>
+        <Version>$([System.IO.File]::ReadAllText("$(MSBuildProjectDirectory)/version.txt").split(0xa)[0])</Version>
+        <PackageVersion>$([System.IO.File]::ReadAllText("$(MSBuildProjectDirectory)/version.txt").split(0xa)[0])</PackageVersion>
+        <AssemblyVersion>$([System.IO.File]::ReadAllText("$(MSBuildProjectDirectory)/version.txt").split(0xa)[0])</AssemblyVersion>
     </PropertyGroup>
     <ItemGroup>
         <PackageReference Include="Unknown6656.Generics" Version="1.0.17" />
