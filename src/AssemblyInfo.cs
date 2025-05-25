@@ -1,15 +1,15 @@
 
 //////////////////////////////////////////////////////////////////////////
-// Auto-generated 2025-05-22 01:38:50.475                               //
+// Auto-generated 2025-05-25 14:30:49.787                               //
 // ANY CHANGES TO THIS DOCUMENT WILL BE LOST UPON RE-GENERATION         //
 //////////////////////////////////////////////////////////////////////////
 
 using System.Reflection;
 using System;
 
-[assembly: AssemblyVersion("0.0.2.9042")]
-[assembly: AssemblyFileVersion("0.0.2.9042")]
-[assembly: AssemblyInformationalVersion("v.0.0.2.9042, commit: e57b1a4775e263b479d2105fd54acb7f8aef3dfe")]
+[assembly: AssemblyVersion("0.0.28.9045")]
+[assembly: AssemblyFileVersion("0.0.28.9045")]
+[assembly: AssemblyInformationalVersion("v.0.0.28.9045, commit: a238169f67542c08ee17ac6536996097fa74bf93")]
 [assembly: AssemblyCompany("Unknown6656")]
 [assembly: AssemblyCopyright("Copyright © 2025, Unknown6656")]
 [assembly: AssemblyProduct("Pythia by Unknown6656")]
@@ -35,11 +35,11 @@ public static class __module__
     /// <summary>
     /// The project's current version.
     /// </summary>
-    public static Version? ProgramVersion { get; } = Version.Parse("0.0.2.9042");
+    public static Version? ProgramVersion { get; } = Version.Parse("0.0.28.9045");
     /// <summary>
     /// The Git hash associated with the current build.
     /// </summary>
-    public const string GitHash = "e57b1a4775e263b479d2105fd54acb7f8aef3dfe";
+    public const string GitHash = "a238169f67542c08ee17ac6536996097fa74bf93";
     /// <summary>
     /// The name of the GitHub repository associated with <see cref="RepositoryURL"/>.
     /// </summary>
@@ -49,7 +49,7 @@ public static class __module__
     /// </summary>
     public const string RepositoryURL = "https://github.com/Unknown6656/Pythia";
     /// <summary>
-    /// The date and time of the current build (2025-05-22 01:38:50.475).
+    /// The date and time of the current build (2025-05-25 14:30:49.787).
     /// </summary>
-    public static DateTime DateBuilt { get; } = DateTime.FromFileTimeUtc(0x01dbcaa98146e596L);
+    public static DateTime DateBuilt { get; } = DateTime.FromFileTimeUtc(0x01dbcd70d8fa5d16L);
 }
