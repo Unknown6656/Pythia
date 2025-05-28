@@ -8,6 +8,7 @@
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
     "@types/react-router-dom": "^5.3.3",
+    "ipaddr": "^0.1.0",
     "katex": "^0.16.22",
     "react": "^19.0.0",
     "react-device-detect": "^2.2.3",

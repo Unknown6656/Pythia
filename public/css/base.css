@@ -50,29 +50,46 @@
     --font-code: 'Cascadia Code',
                  'Cascadia Mono',
                  'Ubuntu Mono',
+                 ui-monospace,
                  'SFMono-Regular',
+                 'SF Mono',
+                 'Menlo',
                  'Consolas',
                  'Liberation Mono',
-                 'Menlo',
                  'Courier',
                  monospace;
 
     font-family: var(--font-mono);
-    background-color: #1e1e1e;
+    font-size: 11pt;
+    position: absolute;
+    display: block;
+    background-color: #1E1E1E;
     color: #ddd;
-    
+
     transition-timing-function: ease;
     transition-property: all;
     transition-duration: .3s;
 }
 
-pre, code, c {
-    font-family: var(--font-code);
+:root::before {
+    background-image: url('../img/wallpaper.jpg');
+    background-attachment: fixed;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: cover;
+    position: absolute;
+    /* filter: blur(15px); */
+    opacity: .3;
+    z-index: -1;
+    content: '';
+    height: 100%;
+    width: 100%;
+    left: 0px;
+    top: 0px;
 }
 
-:root {
-    position: absolute;
-    display: block;
+pre, code, c {
+    font-family: var(--font-code);
 }
 
 :root,
@@ -93,7 +110,8 @@ body {
 
 header,
 footer {
-    background-color: #252526;
+    background-color: #25252650;
+    backdrop-filter: blur(15px);
     flex-direction: row;
     display: flex;
     padding: 1rem;
@@ -160,17 +178,19 @@ pythia-output {
 
 binary-viewer {
     flex-direction: column;
-    display: flex;
     max-height: 100%;
+    max-width: 810px;
+    display: flex;
 }
 
 binary-data {
-    flex: 1;
+    padding-right: 1ch;
     font-family: var(--font-code);
     overflow-y: scroll;
     display: block;
     height: 100%;
     width: 100%;
+    flex: 1;
 }
 
 binary-data table {
@@ -180,8 +200,10 @@ binary-data table {
 binary-data th,
 binary-data td {
     vertical-align: middle;
+    word-break: keep-all;
+    text-wrap: nowrap;
     text-align: left;
-    padding: .3ch .6ch;
+    padding: .2ch .5ch;
     cursor: default;
 }
 
@@ -205,6 +227,17 @@ binary-data table tr th:first-child {
     color: #a6a6a6;
 }
 
+binary-data table tr[active],
+binary-data table th[active],
+binary-data table td[active] {
+    background-color: #444;
+}
+
+binary-data table td[selected] {
+    background-color: #555;
+    color: #D7BA7D;
+}
+
 binary-data table tr:hover {
     background-color: #454545;
     color: #D7BA7D;
@@ -214,8 +247,20 @@ binary-data table tr:hover th:first-child {
     color: #ddd;
 }
 
-binary-data table:hover tr:not(:hover) {
+binary-data table:not(:hover) td:not([active]) {
     opacity: .8;
+}
+
+binary-data table:hover tr:not(:hover) {
+    opacity: .5;
+}
+
+binary-data span.error {
+    color: #F44747;
+}
+
+binary-data span.control {
+    color: #569CD6;
 }
 
 binary-data table td:hover {
@@ -225,7 +270,30 @@ binary-data table td:hover {
 
 binary-inspector {
     border-top: 1px solid currentcolor;
-    padding: .5ch;
-    min-height: 280px;
+    /* min-height: 400px; */
     display: flex;
+    padding: .5ch;
+}
+
+binary-inspector th {
+    text-align: right;
+    padding: 0 1ch;
+}
+
+binary-inspector input {
+    font-family: var(--font-code);
+    background-color: #252526;
+    border: 1px solid currentcolor;
+    text-align: right;
+    font-size: 1rem;
+    padding: .5ch;
+    color: #ddd;
+    min-width: 22ch;
+    width: 100%;
+}
+
+binary-inspector input:focus {
+    background-color: #334;
+    outline: none;
+    color: #569CD6;
 }
