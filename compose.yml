@@ -1,15 +1,36 @@
 services:
-   pythia:
-        container_name: pythia
+    frontend:
+        container_name: frontend
         build:
-            context: .
+            context: frontend
         environment:
             - UI_PORT=${UI_PORT}
             - UI_HOST=${UI_HOST}
         stdin_open: true
         tty: true
+        networks:
+            - pythia_network
         ports:
             - ${UI_PORT}:${UI_PORT}
         volumes:
-            - ./src:/app/src
-            - ./public:/app/public
+            - ./frontend/src:/app/src
+            - ./frontend/public:/app/public
+
+    backend:
+        container_name: backend
+        build:
+            context: backend
+        environment:
+            - API_PORT=${API_PORT}
+        stdin_open: true
+        tty: true
+        networks:
+            - pythia_network
+        ports:
+            - ${API_PORT}:${API_PORT}
+        entrypoint: ["fastapi", "run", "main.py", "--host", "0.0.0.0", "--port", "${API_PORT}", "--workers", "1"]
+
+networks:
+    pythia_network:
+        name: pythia_network
+        driver: bridge
