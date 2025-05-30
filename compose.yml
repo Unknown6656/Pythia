@@ -3,9 +3,16 @@ services:
         container_name: frontend
         build:
             context: frontend
+            args:
+                UI_PORT: ${UI_PORT}
+                UI_HOST: ${UI_HOST}
+                API_PORT: ${API_PORT}
+                API_HOST: ${API_HOST}
         environment:
             - UI_PORT=${UI_PORT}
             - UI_HOST=${UI_HOST}
+            - API_PORT=${API_PORT}
+            - API_HOST=${API_HOST}
         stdin_open: true
         tty: true
         networks:
@@ -28,7 +35,8 @@ services:
             - pythia_network
         ports:
             - ${API_PORT}:${API_PORT}
-        entrypoint: ["fastapi", "run", "main.py", "--host", "0.0.0.0", "--port", "${API_PORT}", "--workers", "1"]
+        volumes:
+            - ./backend:/app
 
 networks:
     pythia_network:
