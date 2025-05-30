@@ -1,1 +1,2 @@
 fastapi[standard]==0.115.8
+pyparsing==3.2.3
