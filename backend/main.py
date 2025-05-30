@@ -1,3 +1,4 @@
+from typing import Any
 import ipaddress
 import datetime
 import json
@@ -155,14 +156,8 @@ def file_inspect(request : Request, name : str, offset : int, length : int = 16)
 @app.get('/code/parse')
 def code_parse(request : Request, code : str) -> Response:
     try:
-        parsed: pp.ParseResults = parser(code)
+        parsed: list[dict[str, Any]] = parser(code)
 
-        return Response(f'''
-{parsed.dump()}
----------------------------------------------------
-{json.dumps(parsed.as_dict(), indent = 4)}
----------------------------------------------------
-{json.dumps(parsed.as_list(), indent = 4)}
-                        ''', 200)
+        return Response(json.dumps(parsed), 200, media_type = 'application/json')
     except pp.ParseException as e:
         return Response(f'Parse error: {e}', 400)

@@ -1,4 +1,6 @@
+from typing import Any
 import pyparsing as pp
+import json
 import re
 
 
@@ -57,15 +59,18 @@ import re
 #                      | array_size ',' array_dimension
 # 
 
+
 class LayoutParser():
     def __init__(self : 'LayoutParser') -> None:
         number = pp.Regex(r'-?(\d+|0b[01]+|0x[0-9a-fA-F]+)')
 
         symbol_dot = pp.Suppress('.')
         symbol_comma = pp.Suppress(',')
-        symbol_asterisk = pp.Suppress('*')
+        symbol_pointer = pp.Word('*', exact = 1)
         symbol_colon = pp.Suppress(':')
         symbol_semicolon = pp.Suppress(';')
+        symbol_leftparen = pp.Suppress('(')
+        symbol_rightparen = pp.Suppress(')')
         symbol_leftbrace = pp.Suppress('{')
         symbol_rightbrace = pp.Suppress('}')
         symbol_leftbracket = pp.Suppress('[')
@@ -80,49 +85,153 @@ class LayoutParser():
         token_typename_userdef: pp.ParserElement = token_identifier('name')
         token_typename = pp.Group(keyword_builtin('builtin') | token_typename_userdef('userdef'))
 
-        token_qualified_typename = pp.Group(
-            keyword_builtin('builtin') |
-            pp.DelimitedList(token_typename_userdef, symbol_dot, min = 1)('userdef')
-        )
+        token_qualified_typename = pp.DelimitedList(token_typename_userdef, symbol_dot)
 
         token_type_identifier = pp.Forward()
 
-        token_type_field = pp.Group(
-            token_identifier('name') + symbol_colon + token_type_identifier('type') + symbol_semicolon
-            # token_type_identifier('type') + token_identifier('name') + symbol_semicolon
+        token_type_member = pp.Group(
+            token_identifier('name') +
+            symbol_colon +
+            token_type_identifier('type') +
+            symbol_semicolon
         )
 
-        token_type_fields = pp.ZeroOrMore(token_type_field)
+        token_type_members = pp.ZeroOrMore(token_type_member)
 
-        token_type_body = pp.Group(symbol_leftbrace + token_type_fields('fields') + symbol_rightbrace)
+        token_type_body = pp.Group(symbol_leftbrace + token_type_members('members') + symbol_rightbrace)
 
         token_type_definition = pp.Group(
-            (keyword_struct | keyword_union)('base') +
+            (keyword_struct | keyword_union)('type') +
             token_typename_userdef('name') +
             token_type_body('body') +
             symbol_semicolon
         )
 
-        token_inline_type_definition = pp.Group((keyword_struct | keyword_union)('base') + token_type_body('body'))
+        token_inline_type_definition = pp.Group(
+            symbol_leftparen +
+            (keyword_struct | keyword_union)('type') +
+            token_type_body('body') +
+            symbol_rightparen
+        )
 
         token_array_dimension = pp.Group(number('fixed') | token_qualified_typename('dynamic'))
 
-        token_array_size = pp.DelimitedList(token_array_dimension, symbol_comma)
-        # token_array_size.set_parse_action(lambda t: t.as_list())
-
-        token_composite_type = pp.Group(
-            token_typename('base') +
-            pp.Optional(
-                symbol_asterisk('pointer') |
-                (symbol_leftbracket + pp.Optional(token_array_size)('size') + symbol_rightbracket)('array')
-            )
+        token_array_size = pp.Group(
+            symbol_leftbracket +
+            pp.Optional(pp.DelimitedList(token_array_dimension, symbol_comma)('size')) +
+            symbol_rightbracket
         )
 
-        token_type_identifier <<= token_inline_type_definition('inline') | token_composite_type('composite')
+        token_type_suffix = pp.ZeroOrMore(pp.Group(symbol_pointer('pointer') | token_array_size('array')))
+
+        token_type_identifier <<= pp.Group(
+            token_inline_type_definition('inline') |
+            (token_typename('base') + token_type_suffix('suffix'))
+        )
 
         self.parser: pp.ParserElement = token_type_definition.ignore_whitespace()
-        self.parser.set_debug(True, True)
+        # self.parser.set_debug(True, True)
 
 
-    def __call__(self: 'LayoutParser', string : str) -> pp.ParseResults:
-        return self.parser.parseString(string)
+    def __call__(self: 'LayoutParser', string : str) -> list[dict[str, Any]]:
+        print('\x1b[2J\x1b[3J\x1b[!p')
+
+        raw: pp.ParseResults = self.parser.parseString(string)
+        parsed : list[dict[str, Any]] = []
+
+
+        def struct_converter(type : str, name : str | None, members : pp.ParseResults) -> dict[str, Any]:
+            return {
+                '$type': type,
+                'name': name,
+                'body': {
+                    '$type': 'body',
+                    'members': [
+                        {
+                            '$type': 'member',
+                            'name': member.name,
+                            'type': type_converter(member.type),
+                        } for member in members
+                    ]
+                }
+            }
+
+        def type_converter(item : pp.ParseResults) -> dict[str, Any]:
+            if 'builtin' in item:
+                return {
+                    '$type': 'type',
+                    'builtin': True,
+                    'name': item.builtin,
+                }
+            elif 'userdef' in item:
+                return {
+                    '$type': 'type',
+                    'builtin': False,
+                    'name': item.userdef,
+                }
+            elif 'inline' in item:
+                inline: pp.ParseResults = item.inline
+
+                if 'type' in inline and 'body' in inline:
+                    return struct_converter(inline.type, None, inline.body.members)
+                else:
+                    return {
+                        '$type': 'unknown',
+                        '$raw': inline.dump()
+                    }
+            elif 'suffix' in item and 'base' in item:
+                result: dict[str, Any] = type_converter(item.base)
+
+                for suffix in item.suffix:
+                    if 'array' in suffix:
+                        if 'size' in suffix.array:
+                            for raw_size in suffix.array.size:
+                                size: tuple[Any, str] = None, 'dynamic'
+
+                                if 'fixed' in raw_size:
+                                    size = int(raw_size.fixed), 'fixed'
+                                elif 'dynamic' in raw_size:
+                                    size = {
+                                        '$type': 'reference',
+                                        'name': [token for token in raw_size.dynamic]
+                                    }, 'reference'
+
+                                result = {
+                                    '$type': 'array',
+                                    '$size': size[1],
+                                    'base': result,
+                                    'size': size[0],
+                                }
+                        else:
+                            result = {
+                                '$type': 'array',
+                                '$size': 'dynamic',
+                                'base': result,
+                                'size': None
+                            }
+                    elif 'pointer' in suffix:
+                        result = {
+                            '$type': 'pointer',
+                            'base': result
+                        }
+                    else:
+                        result = {
+                            '$type': 'unknown',
+                            '$raw': suffix.dump(),
+                            'base': result,
+                        }
+
+                return result
+            elif 'type' in item and 'body' in item:
+                return struct_converter(item.type, item.name if 'name' in item else None, item.body.members)
+            else:
+                return {
+                    '$type': 'unknown',
+                    '$raw': item.dump()
+                }
+
+        for item in raw:
+            parsed.append(type_converter(item))
+
+        return parsed
+
