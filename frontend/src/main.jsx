@@ -3,19 +3,25 @@
 import React from 'react';
 import { Buffer } from 'buffer';
 import ipaddr from 'ipaddr.js';
+import { on } from 'events';
 
 
 
+const uuid4 = () => "10000000-1000-4000-8000-100000000000".replace(/[018]/g, c =>
+    (+c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> +c / 4).toString(16)
+);
 
+const btoa = data => Buffer.from(data).toString('base64');
+
+const atob = data => Buffer.from(data, 'base64');
 
 const hex = (value, length = 2) => Number(value).toString(16).padStart(length, '0');
 
-const bin = (value, length = 8) => (Number(value) >>> 0).toString(2).padStart(length, '0');
-
-const uuid = array => `{${hex(array[0])}${hex(array[1])}${hex(array[2])}${hex(array[3])}-${hex(array[4])}${hex(array[5])}-${hex(array[6])}${hex(array[7])}-${hex(array[8])}${hex(array[9])}-${hex(array[10])}${hex(array[11])}${hex(array[12])}${hex(array[13])}${hex(array[14])}${hex(array[15])}}`;
-
 const ascii8 = value =>
 {
+    if (value === null || value === undefined)
+        return '';
+
     value = Number(value);
 
     if (value < 0 || value > 255)
@@ -26,69 +32,6 @@ const ascii8 = value =>
         return <span className="control">␡</span>;
     else
         return String.fromCharCode(value);
-}
-
-function toint(array, bitwidth, signed)
-{
-    if (array.length === 0)
-        return 0;
-
-    let value = 0n;
-
-    for (let i = 0; i < (bitwidth >> 3); i++)
-    {
-        value <<= 8n;
-        value |= BigInt(array[i]) & 0xFFn;
-    }
-
-    if (signed)
-        value = uncomplement(value, bitwidth);
-    // else
-        // value = value >>> 0;
-
-    return value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, "'");
-}
-
-function uncomplement(val, bitwidth)
-{
-    val = BigInt(val);
-    bitwidth = BigInt(bitwidth);
-
-    const isnegative = val & (1n << (bitwidth - 1n));
-    const boundary = (1n << bitwidth);
-    const minval = -boundary;
-    const mask = boundary - 1n;
-
-    return isnegative ? minval + (val & mask) : val;
-}
-
-function to_ISO_date(date = null)
-{
-    date = date || new Date();
-
-    // TODO : fix this timezone shite!
-    const timezone = 0; // -date.getTimezoneOffset();
-    const diff = timezone >= 0 ? '+' : '-';
-    const pad = num => (num < 10 ? '0' : '') + num;
-
-    const year = date.getFullYear();
-    const mon = date.getMonth() + 1;
-    const day = date.getDate();
-    const hou = date.getHours() + timezone / 60;
-    const min = date.getMinutes() + timezone % 60;
-    const sec = date.getSeconds();
-
-    return `${year}-${pad(mon)}-${pad(day)} ${pad(hou)}:${pad(min)}:${pad(sec)}`;
-}
-
-function unix_to_ISO_date(unix)
-{
-    const date = new Date(0);
-
-    unix = unix.replace(/[^0-9]/g, '');
-    date.setUTCSeconds(Number(unix));
-
-    return to_ISO_date(date);
 }
 
 function* chunk_into(arr, n)
@@ -103,18 +46,6 @@ function* chunk_into(arr, n)
         yield [...chunk, ...end];
     }
 }
-
-
-
-
-
-const uuid4 = () => "10000000-1000-4000-8000-100000000000".replace(/[018]/g, c =>
-    (+c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> +c / 4).toString(16)
-);
-
-const btoa = data => Buffer.from(data).toString('base64');
-
-const atob = data => Buffer.from(data, 'base64');
 
 function useVariable(initial_value)
 {
@@ -144,7 +75,7 @@ async function CallAPI(url, data)
         body: JSON.stringify(data),
     };
 
-    console.log(`API call: ${url} (${id})`, data);
+    console.log(`${id} >>> ${url}`, data);
 
     const response = await fetch(url, payload);
 
@@ -152,7 +83,7 @@ async function CallAPI(url, data)
     {
         const error = await response.text();
 
-        console.error(`API call: ${url} (${id}) status ${response.status}`, error);
+        console.error(`${id} <<< ${url}: error ${response.status}`, error);
 
         throw new Error(`API call failed: (${response.status}) ${error}`);
     }
@@ -160,7 +91,7 @@ async function CallAPI(url, data)
     {
         data = await response.json();
 
-        console.log(`API call: ${url} (${id}) success`, data);
+        console.log(`${id} <<< ${url}: success`, data);
 
         return data;
     }
@@ -170,6 +101,7 @@ async function CallAPI(url, data)
 
 
 const FileContext = React.createContext(null);
+const CodeContext = React.createContext(null);
 
 function FileProvider({ children })
 {
@@ -200,6 +132,51 @@ function FileProvider({ children })
     }}>
         {children}
     </FileContext.Provider>;
+}
+
+function CodeProvider({ children })
+{
+    const code = useVariable(null);
+    const parsed = useVariable(null);
+    const error = useVariable(null);
+
+    const set_code = async code_text =>
+    {
+        code_text = code_text.trim();
+
+        if (code_text === code.value)
+            return;
+
+        code.set(code_text);
+
+        const data = await CallAPI('code/parse', { code: code_text });
+
+        if (data.success)
+        {
+            parsed.set(data.parsed);
+            error.set(null);
+        }
+        else
+        {
+            parsed.set(null);
+            error.set(data.error || {
+                'type': '(unknown)',
+                'message': 'An unknown error occurred while parsing the code.',
+                'line': 0,
+                'column': 0,
+                'text': null,
+            });
+        }
+    }
+
+    return <CodeContext.Provider value={{
+        code,
+        parsed,
+        error,
+        set_code
+    }}>
+        {children}
+    </CodeContext.Provider>;
 }
 
 
@@ -235,21 +212,19 @@ function BinaryViewer()
 
     function viewer_tb(label, val, readonly = true, change_handler = null)
     {
-        if (readonly)
-            change_handler = null;
+        val = val === null || val === undefined ? '' : String(val);
 
         return <>
             <th>{label}:</th>
             <td>
                 <input type="text"
                        name={label.toLowerCase().replace(/[^\w]/g, '_')}
-                       readOnly={readonly ? '' : null}
-                       onChange={change_handler}
+                       readOnly={!!readonly || null}
+                       onChange={readonly ? null : change_handler}
                        autoComplete="off"
                        autoCorrect="off"
                        spellCheck="false"
-                       value={val}
-                       defaultValue={val}/>
+                       value={val}/>
             </td>
         </>;
     };
@@ -280,7 +255,7 @@ function BinaryViewer()
                             {chunk.map((byte, col) =>
                             {
                                 if (byte === null)
-                                    return <td key={col} empty="">--</td>;
+                                    return <td key={col} empty=""/>;
                                 else
                                     return <td key={col}
                                                active={active_col == col ? '' : null}
@@ -320,135 +295,115 @@ function BinaryViewer()
 
             {inspected.value ?
             <table>
-                <tr>
-                    <th>Offset:</th>
-                    <td><input type="text" name="start" value={hex(offset.value, 8)} onChange={e =>
-                    {
-                        // TODO
-                    }}/></td>
-                    {viewer_tb('Value', inspected.value.value, true)}
-                    {viewer_tb('Binary', inspected.value.binary, true)}
-                </tr>
-                <tr>
-                    {viewer_tb('ASCII', inspected.value.ascii[0], true)}
-                    {viewer_tb('UTF-8', inspected.value.utf8[0], true)}
-                    {viewer_tb('UTF-16', inspected.value.utf16[0], true)}
-                </tr>
-                <tr>
-                    {viewer_tb('int8', inspected.value.int8, true)}
-                    {/* todo: jump to address */}
-                    {viewer_tb('uint8', inspected.value.uint8, true)}
-                    {viewer_tb('bool8', !!inspected.value.uint8, true)}
-                </tr>
-                <tr>
-                    {viewer_tb('int16', inspected.value.int16, true)}
-                    {/* todo: jump to address */}
-                    {viewer_tb('uint16', inspected.value.uint16, true)}
-                    {viewer_tb('float16', inspected.value.float16, true)}
-                </tr>
-                <tr>
-                    {viewer_tb('int32', inspected.value.int32, true)}
-                    {/* todo: jump to address */}
-                    {viewer_tb('uint32', inspected.value.uint32, true)}
-                    {viewer_tb('float32', inspected.value.float32, true)}
-                </tr>
-                <tr>
-                    {viewer_tb('int64', inspected.value.int64, true)}
-                    {/* todo: jump to address */}
-                    {viewer_tb('uint64', inspected.value.uint64, true)}
-                    {viewer_tb('float64', inspected.value.float64, true)}
-                </tr>
-                <tr>
-                    {viewer_tb('int128', inspected.value.int128, true)}
-                    {/* todo: jump to address */}
-                    {viewer_tb('uint128', inspected.value.uint128, true)}
-                    {viewer_tb('float128', inspected.value.float128, true)}
-                </tr>
-                <tr>
-                    {viewer_tb('IPv4', inspected.value.ipv4, true)}
-                    <th>IPv6:</th>
-                    <td colSpan="3">
-                        <input type="text" name="dec" readonly value={inspected.value.ipv6}/>
-                    </td>
-                </tr>
-                <tr>
-                    {viewer_tb('time_32t', inspected.value.time32, true)}
+                <tbody>
+                    <tr>
+                        <th>Offset:</th>
+                        <td><input type="text" name="start" value={hex(offset.value, 8)} onChange={e =>
+                        {
+                            // TODO
+                        }}/></td>
+                        {viewer_tb('Value', inspected.value.value, true)}
+                        {viewer_tb('Binary', inspected.value.binary, true)}
+                    </tr>
+                    <tr>
+                        {viewer_tb('ASCII', inspected.value.ascii[0], true)}
+                        {viewer_tb('UTF-8', inspected.value.utf8[0], true)}
+                        {viewer_tb('UTF-16', inspected.value.utf16[0], true)}
+                    </tr>
+                    <tr>
+                        {viewer_tb('int8', inspected.value.int8, true)}
+                        {/* todo: jump to address */}
+                        {viewer_tb('uint8', inspected.value.uint8, true)}
+                        {viewer_tb('bool8', !!inspected.value.uint8, true)}
+                    </tr>
+                    <tr>
+                        {viewer_tb('int16', inspected.value.int16, true)}
+                        {/* todo: jump to address */}
+                        {viewer_tb('uint16', inspected.value.uint16, true)}
+                        {viewer_tb('float16', inspected.value.float16, true)}
+                    </tr>
+                    <tr>
+                        {viewer_tb('int32', inspected.value.int32, true)}
+                        {/* todo: jump to address */}
+                        {viewer_tb('uint32', inspected.value.uint32, true)}
+                        {viewer_tb('float32', inspected.value.float32, true)}
+                    </tr>
+                    <tr>
+                        {viewer_tb('int64', inspected.value.int64, true)}
+                        {/* todo: jump to address */}
+                        {viewer_tb('uint64', inspected.value.uint64, true)}
+                        {viewer_tb('float64', inspected.value.float64, true)}
+                    </tr>
+                    <tr>
+                        {viewer_tb('int128', inspected.value.int128, true)}
+                        {/* todo: jump to address */}
+                        {viewer_tb('uint128', inspected.value.uint128, true)}
+                        {viewer_tb('float128', inspected.value.float128, true)}
+                    </tr>
+                    <tr>
+                        {viewer_tb('IPv4', inspected.value.ipv4, true)}
+                        <th>IPv6:</th>
+                        <td colSpan="3">
+                            <input type="text" name="dec" readOnly value={inspected.value.ipv6}/>
+                        </td>
+                    </tr>
+                    <tr>
+                        {viewer_tb('time_32t', inspected.value.time32, true)}
 
-                    <th>UUID:</th>
-                    <td colSpan="3">
-                        <input type="text" name="dec" readonly value={inspected.value.uuid}/>
-                    </td>
-                </tr>
-                <tr>
-                    <th>x86-32:</th>
-                    <td colSpan="3"><input type="text" name="dec" readonly/></td>
-                </tr>
-                <tr>
-                    <th>x86-64:</th>
-                    <td colSpan="3"><input type="text" name="dec" readonly/></td>
-                </tr>
+                        <th>UUID:</th>
+                        <td colSpan="3">
+                            <input type="text" name="dec" readOnly value={inspected.value.uuid}/>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>x86-32:</th>
+                        <td colSpan="3"><input type="text" name="dec" readOnly/></td>
+                    </tr>
+                    <tr>
+                        <th>x86-64:</th>
+                        <td colSpan="3"><input type="text" name="dec" readOnly/></td>
+                    </tr>
+                </tbody>
             </table>
             : <div className="error">No data inspected yet.</div>}
         </binary-inspector>
     </binary-viewer>;
 }
 
-
-function CodeWindow({ data })
+function CodeWindow()
 {
-    const structure = useVariable(null);
+    const { set_code } = React.useContext(CodeContext);
+    const tb_ref = React.useRef(null);
+    const on_input = async e => set_code((tb_ref.current || e.target).innerText.trim());
+
+    React.useEffect(() =>
+    {
+        on_input();
+    }, []);
 
     return <code-window>
-        <pre><code>{`
-        // TODO : implement coding window, so that the user can write code to parse the binary data
-        // e.g.:
-
-        struct _IMAGE_DOS_HEADER {  // DOS .EXE header
-            WORD   e_magic;         // Magic number
-            WORD   e_cblp;          // Bytes on last page of file
-            WORD   e_cp;            // Pages in file
-            WORD   e_crlc;          // Relocations
-            WORD   e_cparhdr;       // Size of header in paragraphs
-            WORD   e_minalloc;      // Minimum extra paragraphs needed
-            WORD   e_maxalloc;      // Maximum extra paragraphs needed
-            WORD   e_ss;            // Initial (relative) SS value
-            WORD   e_sp;            // Initial SP value
-            WORD   e_csum;          // Checksum
-            WORD   e_ip;            // Initial IP value
-            WORD   e_cs;            // Initial (relative) CS value
-            WORD   e_lfarlc;        // File address of relocation table
-            WORD   e_ovno;          // Overlay number
-            WORD   e_res[4];        // Reserved words
-            WORD   e_oemid;         // OEM identifier (for e_oeminfo)
-            WORD   e_oeminfo;       // OEM information; e_oemid specific
-            WORD   e_res2[10];      // Reserved words
-            LONG   e_lfanew;        // File address of new exe header
-        };
-
-        struct _IMAGE_NT_HEADERS {
-            DWORD Signature;
-            IMAGE_FILE_HEADER FileHeader;
-            IMAGE_OPTIONAL_HEADER32 OptionalHeader;
-        };
-
-        struct _IMAGE_NT_HEADERS64 {
-            DWORD Signature;
-            IMAGE_FILE_HEADER FileHeader;
-            IMAGE_OPTIONAL_HEADER64 OptionalHeader;
-        };
-
-        struct _IMAGE_NT_HEADERS {
-            DWORD Signature;
-            IMAGE_FILE_HEADER FileHeader;
-            IMAGE_OPTIONAL_HEADER32 OptionalHeader;
-        };
-
-        struct _IMAGE_OPTIONAL_HEADER {
-            ...
-        };
-
-        `}</code></pre>
+        <pre><code contentEditable="plaintext-only"
+                   ref={tb_ref}
+                   onInput={on_input}
+                   onPaste={on_input}
+                   onBlur={on_input}>
+            struct TEST<br/>
+            &#123;<br/>
+                value : int32;<br/>
+                length : uint8;<br/>
+                text : char[length];<br/>
+            &#125;;<br/>
+        </code></pre>
     </code-window>;
+}
+
+function CodeErrorWindow()
+{
+    const { error } = React.useContext(CodeContext);
+
+    return <code-error-window>
+        <$ error={error.value}/>
+    </code-error-window>;
 }
 
 function MainPage()
@@ -472,23 +427,29 @@ function MainPage()
         </header>
         <main>
             <pythia-input>
-                <BinaryViewer data={bytes}/>
+                <BinaryViewer/>
             </pythia-input>
             <pythia-code>
-                <CodeWindow data={bytes}/>
+                <CodeWindow/>
             </pythia-code>
+            <pythia-error>
+                <CodeErrorWindow/>
+            </pythia-error>
             <pythia-output>
                 output
             </pythia-output>
             <separator v=""/>
-            <separator h=""/>
+            <separator h="1"/>
+            <separator h="2"/>
         </main>
         {/* <footer/> */}
     </>;
 }
 
 export const MainPageWrapper = () => <FileProvider>
-                                         <MainPage/>
+                                        <CodeProvider>
+                                            <MainPage/>
+                                        </CodeProvider>
                                      </FileProvider>;
 
 const $ = element => <pre><code>{JSON.stringify(element, null, 4)}</code></pre> 
