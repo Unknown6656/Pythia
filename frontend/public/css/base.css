@@ -74,7 +74,7 @@
 :root::before {
     background-image: url('../img/wallpaper.jpg');
     background-attachment: fixed;
-    background-position: center;
+    background-position: center right;
     background-repeat: no-repeat;
     background-size: cover;
     position: absolute;
@@ -134,7 +134,7 @@ main {
     flex: 1;
 
     grid-template-columns: auto 1px 1fr;
-    grid-template-rows: 1fr 1px 1fr;
+    grid-template-rows: 2fr 1px auto 1px 3fr;
 }
 
 main > * {
@@ -151,8 +151,13 @@ separator[v] {
     grid-row: 1 / -1;
 }
 
-separator[h] {
+separator[h="1"] {
     grid-row: 2;
+    grid-column: 2 / -1;
+}
+
+separator[h="2"] {
+    grid-row: 4;
     grid-column: 2 / -1;
 }
 
@@ -166,12 +171,18 @@ pythia-code {
     grid-row: 1;
 }
 
-pythia-output {
+pythia-error {
     grid-column: 3;
     grid-row: 3;
 }
 
+pythia-output {
+    grid-column: 3;
+    grid-row: 5;
+}
+
 pythia-code,
+pythia-error,
 pythia-output {
     margin: 1ch;
 }
@@ -181,6 +192,7 @@ binary-viewer {
     max-height: 100%;
     max-width: 810px;
     display: flex;
+    height: 100%;
 }
 
 binary-data {
@@ -254,6 +266,13 @@ binary-data table:not(:hover) td:not([active]) {
 binary-data table:hover tr:not(:hover) {
     opacity: .5;
 }
+
+binary-data table th[empty],
+binary-data table td[empty] {
+    pointer-events: none;
+    cursor: default;
+}
+
 
 binary-data span.error {
     color: #F44747;
