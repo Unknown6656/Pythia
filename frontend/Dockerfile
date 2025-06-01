@@ -4,7 +4,6 @@ RUN mkdir /app
 WORKDIR /app
 
 ENV NODE_ENV=production
-ENV REACT_APP_NO_CLEAR_CONSOLE=true
 
 COPY package.json ./
 RUN npm install --force
@@ -18,18 +17,14 @@ FROM base AS build
 COPY public/ ./public/
 COPY src/ ./src/
 
-ARG UI_PORT
-ARG UI_HOST
-ARG API_PORT
-ARG API_HOST
+ARG REACT_APP_UI_PORT
 
-EXPOSE $UI_PORT
-
-ENV API_HOST=$API_HOST
-ENV API_PORT=$API_PORT
-ENV PORT=$UI_PORT
+ENV REACT_APP_UI_PORT=$REACT_APP_UI_PORT
+ENV REACT_APP_NO_CLEAR_CONSOLE=true
 ENV FORCE_COLOR=true
 ENV CHOKIDAR_USEPOLLING=true
 ENV WATCHPACK_POLLING=true
 
-CMD /bin/sh -c "ip a; PORT=$UI_PORT HOST=$UI_HOST API_HOST=$API_HOST API_PORT=$API_PORT node_modules/react-scripts/bin/react-scripts.js start --port $UI_PORT --host $UI_HOST"
+EXPOSE $REACT_APP_UI_PORT
+
+CMD ["/bin/sh", "-c", "PORT=$REACT_APP_UI_PORT HOST=0.0.0.0 node_modules/react-scripts/bin/react-scripts.js start --port $REACT_APP_UI_PORT --host 0.0.0.0"]
