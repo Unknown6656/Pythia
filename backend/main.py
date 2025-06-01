@@ -72,16 +72,16 @@ def root() -> Response:
 @app.post(f'{BASE_URL}/file/upload')
 async def file_upload(request : Request) -> Response:
     try:
-        json: dict[str, Any] = await request.json()
-        name: str | None = json.get('name', None)
-        data: str | None = json.get('data', None)
+        reqjson: dict[str, Any] = await request.json()
+        name: str | None = reqjson.get('name', None)
+        data: str | None = reqjson.get('data', None)
 
         if not name or not data:
             return Response(None, 400)
 
         data_bytes: bytes = base64.b64decode(data)
-        comment: str | None = json.get('comment', None)
-        mime = str(json.get('mime', 'application/octet-stream'))
+        comment: str | None = reqjson.get('comment', None)
+        mime = str(reqjson.get('mime', 'application/octet-stream'))
 
         file: PythiaFileInfo = files.create(str(name), data_bytes, mime, comment)
 
@@ -103,8 +103,11 @@ async def file_upload_raw(request : Request) -> Response:
 
     return file_info(request, name, False)
 
-@app.get(f'{BASE_URL}/file/delete')
-def file_delete(request : Request, name : str | uuid.UUID) -> Response:
+@app.post(f'{BASE_URL}/file/delete')
+async def file_delete(request : Request) -> Response:
+    reqjson: dict[str, Any] = await request.json()
+    name: str | None = reqjson.get('name', None)
+
     if not name:
         return Response(None, 400)
     elif name not in files:
@@ -113,8 +116,12 @@ def file_delete(request : Request, name : str | uuid.UUID) -> Response:
         del files[name]
         return Response(None, 204)
 
-@app.get(f'{BASE_URL}/file/info')
-def file_info(request : Request, name : str | uuid.UUID, full : bool = False) -> Response:
+@app.post(f'{BASE_URL}/file/info')
+async def file_info(request : Request) -> Response:
+    reqjson: dict[str, Any] = await request.json()
+    name: str | None = reqjson.get('name', None)
+    full: bool = bool(reqjson.get('full', False))
+
     if not name:
         return Response(None, 400)
 
@@ -138,8 +145,11 @@ def file_info(request : Request, name : str | uuid.UUID, full : bool = False) ->
 
         return Response(json.dumps(response), 200, media_type = 'application/json')
 
-@app.get(f'{BASE_URL}/file/view')
-def file_view(request : Request, name : str | uuid.UUID) -> Response:
+@app.post(f'{BASE_URL}/file/view')
+async def file_view(request : Request) -> Response:
+    reqjson: dict[str, Any] = await request.json()
+    name: str | None = reqjson.get('name', None)
+
     if not name:
         return Response(None, 400)
 
@@ -157,8 +167,13 @@ def file_view(request : Request, name : str | uuid.UUID) -> Response:
             }
         )
 
-@app.get(f'{BASE_URL}/file/inspect')
-def file_inspect(request : Request, name : str | uuid.UUID, offset : int, length : int = 16) -> Response:
+@app.post(f'{BASE_URL}/file/inspect')
+async def file_inspect(request : Request) -> Response:
+    reqjson: dict[str, Any] = await request.json()
+    name: str | None = reqjson.get('name', None)
+    offset: int = int(reqjson.get('offset', -1))
+    length: int = int(reqjson.get('length', 16))
+
     if not name or offset < 0 or length <= 0:
         return Response(None, 400)
 
@@ -199,18 +214,42 @@ def file_inspect(request : Request, name : str | uuid.UUID, offset : int, length
         'float128': None, # TODO
         'uuid': str(uuid.UUID(bytes = content[0:16])),
         'ipv4': f'{content[0]}.{content[1]}.{content[2]}.{content[3]}',
-        'ipv6': ipaddress.ip_address(content[0:16]).compressed,
+        'ipv6': f'[{ipaddress.ip_address(content[0:16]).compressed}]',
         'x86_32': None,  # TODO
         'x86_64': None,  # TODO
     }
 
     return Response(json.dumps(response), 200, media_type = 'application/json')
 
-@app.get(f'{BASE_URL}/code/parse')
-def code_parse(request : Request, code : str) -> Response:
-    try:
-        parsed: list[dict[str, Any]] = parser(code)
+@app.post(f'{BASE_URL}/code/parse')
+async def code_parse(request : Request) -> Response:
+    response: dict[str, Any] = {
+        'success': False,
+        'error': None,
+        'parsed': None
+    }
 
-        return Response(json.dumps(parsed), 200, media_type = 'application/json')
+    try:
+        reqjson: dict[str, Any] = await request.json()
+        code: str = reqjson.get('code', '')
+
+        response['parsed'] = parser(code)
+        response['success'] = True
     except pp.ParseException as e:
-        return Response(f'Parse error: {e}', 400)
+        response['error'] = {
+            'type': 'ParseException',
+            'message': str(e),
+            'line': e.lineno,
+            'column': e.column,
+            'text': e.line,
+        }
+    except Exception as e:
+        response['error'] = {
+            'type': str(type(e)),
+            'message': str(e),
+            'line': 0,
+            'column': 0,
+            'text': None,
+        }
+
+    return Response(json.dumps(response), 200, media_type = 'application/json')

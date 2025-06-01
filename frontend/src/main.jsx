@@ -1,7 +1,11 @@
 /* global BigInt */
 
 import React from 'react';
+import { Buffer } from 'buffer';
 import ipaddr from 'ipaddr.js';
+
+
+
 
 
 const hex = (value, length = 2) => Number(value).toString(16).padStart(length, '0');
@@ -89,9 +93,28 @@ function unix_to_ISO_date(unix)
 
 function* chunk_into(arr, n)
 {
-    for (let i = 0; i < arr.length; i += n)
-        yield arr.slice(i, i + n);
+    const count = Math.ceil(arr.length / n);
+
+    for (let i = 0; i < count; ++i)
+    {
+        const chunk = arr.slice(i * n, (i + 1) * n);
+        const end = Array(n - chunk.length).fill(null);
+
+        yield [...chunk, ...end];
+    }
 }
+
+
+
+
+
+const uuid4 = () => "10000000-1000-4000-8000-100000000000".replace(/[018]/g, c =>
+    (+c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> +c / 4).toString(16)
+);
+
+const btoa = data => Buffer.from(data).toString('base64');
+
+const atob = data => Buffer.from(data, 'base64');
 
 function useVariable(initial_value)
 {
@@ -106,43 +129,112 @@ function useVariable(initial_value)
     };
 }
 
-
-
-function BinaryViewer({ data })
+async function CallAPI(url, data)
 {
-    if (!(data instanceof Array))
-        data = Array.from(data);
+    url = `${window.location.origin}/api/${url}`;
 
+    const id = uuid4();
+    const payload = {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Request-ID': id,
+            'X-Request-Source': 'pythia',
+        },
+        body: JSON.stringify(data),
+    };
+
+    console.log(`API call: ${url} (${id})`, data);
+
+    const response = await fetch(url, payload);
+
+    if (!response.ok)
+    {
+        const error = await response.text();
+
+        console.error(`API call: ${url} (${id}) status ${response.status}`, error);
+
+        throw new Error(`API call failed: (${response.status}) ${error}`);
+    }
+    else
+    {
+        data = await response.json();
+
+        console.log(`API call: ${url} (${id}) success`, data);
+
+        return data;
+    }
+}
+
+
+
+
+const FileContext = React.createContext(null);
+
+function FileProvider({ children })
+{
+    const file = useVariable(null);
+    const set_current_file = async id_or_name =>
+    {
+        const data = await CallAPI('file/info', { name: id_or_name, full: true });
+
+        data.data = atob(data.data || '', );
+
+        file.set(data);
+    };
+    const upload_file = async (name, bytes, mime = 'application/octet-stream') =>
+    {
+        const data = await CallAPI('file/upload', {
+            name: name,
+            data: btoa(String.fromCharCode(...bytes)),
+            mime: mime,
+        });
+
+        await set_current_file(data.id);
+    };
+
+    return <FileContext.Provider value={{
+        current_file: file,
+        set_current_file,
+        upload_file
+    }}>
+        {children}
+    </FileContext.Provider>;
+}
+
+
+
+
+function BinaryViewer()
+{
+    const { current_file } = React.useContext(FileContext);
+    const offset = useVariable(0);
+    const inspected = useVariable(null);
+
+    React.useEffect(() =>
+    {
+        (async () => {
+            if (current_file.value && current_file.value.id)
+                inspected.set(await CallAPI('file/inspect', {
+                    name: current_file.value.id,
+                    offset: offset.value,
+                    length: 16,
+                }));
+        })();
+    }, [current_file.value, offset.value]);
+
+
+    if (!current_file.value || !current_file.value.data)
+        return <div className="error">No file selected or file has no data.</div>;
+
+    const data = current_file.value.data;
     const chunk_size = 16;
     const chunks = chunk_into(data, chunk_size);
-    const offset = useVariable(0);
-
     const active_row = Math.floor(offset.value / chunk_size);
     const active_col = offset.value % chunk_size;
 
-    let value = data.slice(offset.value, offset.value + 16);
-
-    if (value.length < 16)
-        value = value.concat(Array(16 - value.length).fill(0));
-
-    const buffer = new ArrayBuffer(value.length);
-    const view = new DataView(buffer);
-
-    value.forEach((b, i) =>
+    function viewer_tb(label, val, readonly = true, change_handler = null)
     {
-        buffer[i] = b;
-        view.setUint8(i, b);
-    });
-
-    function viewer_tb(label, transformer, readonly = true, change_handler = null)
-    {
-        let val = transformer ? transformer(value) : value;
-
-        while (val.props && val.props.children)
-            val = val.props.children;
-
-        val = String(val);
-
         if (readonly)
             change_handler = null;
 
@@ -151,19 +243,16 @@ function BinaryViewer({ data })
             <td>
                 <input type="text"
                        name={label.toLowerCase().replace(/[^\w]/g, '_')}
-                       transformer={transformer}
                        readOnly={readonly ? '' : null}
                        onChange={change_handler}
-                       autocomplete="off"
-                       autocorrect="off"
-                       spellcheck="false"
+                       autoComplete="off"
+                       autoCorrect="off"
+                       spellCheck="false"
                        value={val}
                        defaultValue={val}/>
             </td>
         </>;
     };
-
-
 
     return <binary-viewer>
         <binary-data>
@@ -186,29 +275,33 @@ function BinaryViewer({ data })
                     {chunks.map((chunk, row) =>
                     {
                         return <tr key={row} active={active_row == row ? '' : null}>
-                            <th>
-                                {hex(row * chunk_size, 8)}
-                            </th>
+                            <th>{hex(row * chunk_size, 8)}</th>
                             <th spacer/>
                             {chunk.map((byte, col) =>
                             {
-                                return <td key={col}
-                                           active={active_col == col ? '' : null}
-                                           selected={active_col == col && active_row == row ? '' : null}
-                                           onClick={() => offset.set(row * chunk_size + col)}>
-                                    {hex(byte, 2)}
-                                </td>;
+                                if (byte === null)
+                                    return <td key={col} empty="">--</td>;
+                                else
+                                    return <td key={col}
+                                               active={active_col == col ? '' : null}
+                                               selected={active_col == col && active_row == row ? '' : null}
+                                               onClick={() => offset.set(row * chunk_size + col)}>
+                                        {hex(byte, 2)}
+                                    </td>;
                             })}
                             <th spacer/>
                             <th spacer/>
                             {chunk.map((byte, col) =>
                             {
-                                return <td key={col}
-                                           active={active_col == col ? '' : null}
-                                           selected={active_col == col && active_row == row ? '' : null}
-                                           onClick={() => offset.set(row * chunk_size + col)}>
-                                    {ascii8(byte)}
-                                </td>;
+                                if (byte === null)
+                                    return <td key={col} empty=""/>;
+                                else
+                                    return <td key={col}
+                                               active={active_col == col ? '' : null}
+                                               selected={active_col == col && active_row == row ? '' : null}
+                                               onClick={() => offset.set(row * chunk_size + col)}>
+                                        {ascii8(byte)}
+                                    </td>;
                             })}
                         </tr>;
                     })}
@@ -224,6 +317,8 @@ function BinaryViewer({ data })
                 - jump to next 8 bytes
                 - switch endianness
             */}
+
+            {inspected.value ?
             <table>
                 <tr>
                     <th>Offset:</th>
@@ -231,77 +326,73 @@ function BinaryViewer({ data })
                     {
                         // TODO
                     }}/></td>
-                    {viewer_tb('Value', v => hex(v[0]), true)}
-                    {viewer_tb('Binary', v => bin(v[0]), true)}
+                    {viewer_tb('Value', inspected.value.value, true)}
+                    {viewer_tb('Binary', inspected.value.binary, true)}
                 </tr>
                 <tr>
-                    {viewer_tb('ASCII', v => ascii8(v[0]), true)}
-                    {viewer_tb('UTF-8', _ => new TextDecoder("utf-8").decode(buffer)[0], true)}
-                    {viewer_tb('UTF-16', _ => new TextDecoder("utf-16").decode(buffer)[0], true)}
+                    {viewer_tb('ASCII', inspected.value.ascii[0], true)}
+                    {viewer_tb('UTF-8', inspected.value.utf8[0], true)}
+                    {viewer_tb('UTF-16', inspected.value.utf16[0], true)}
                 </tr>
                 <tr>
-                    {viewer_tb('int8', v => uncomplement(v[0], 8), true)}
+                    {viewer_tb('int8', inspected.value.int8, true)}
                     {/* todo: jump to address */}
-                    {viewer_tb('uint8', v => v[0], true)}
-                    {viewer_tb('bool8', v => !!v[0], true)}
+                    {viewer_tb('uint8', inspected.value.uint8, true)}
+                    {viewer_tb('bool8', !!inspected.value.uint8, true)}
                 </tr>
                 <tr>
-                    {viewer_tb('int16', v => toint(v, 16, true), true)}
+                    {viewer_tb('int16', inspected.value.int16, true)}
                     {/* todo: jump to address */}
-                    {viewer_tb('uint16', v => toint(v, 16, false), true)}
-                    {viewer_tb('float16', _ => view.getFloat16(0), true)}
+                    {viewer_tb('uint16', inspected.value.uint16, true)}
+                    {viewer_tb('float16', inspected.value.float16, true)}
                 </tr>
                 <tr>
-                    {viewer_tb('int32', v => toint(v, 32, true), true)}
+                    {viewer_tb('int32', inspected.value.int32, true)}
                     {/* todo: jump to address */}
-                    {viewer_tb('uint32', v => toint(v, 32, false), true)}
-                    {viewer_tb('float32', _ => view.getFloat32(0), true)}
+                    {viewer_tb('uint32', inspected.value.uint32, true)}
+                    {viewer_tb('float32', inspected.value.float32, true)}
                 </tr>
                 <tr>
-                    {viewer_tb('int64', v => toint(v, 64, true), true)}
+                    {viewer_tb('int64', inspected.value.int64, true)}
                     {/* todo: jump to address */}
-                    {viewer_tb('uint64', v => toint(v, 64, false), true)}
-                    {viewer_tb('float64', _ => view.getFloat64(0), true)}
+                    {viewer_tb('uint64', inspected.value.uint64, true)}
+                    {viewer_tb('float64', inspected.value.float64, true)}
                 </tr>
                 <tr>
-                    {viewer_tb('int128', v => toint(v, 128, true), true)}
+                    {viewer_tb('int128', inspected.value.int128, true)}
                     {/* todo: jump to address */}
-                    {viewer_tb('uint128', v => toint(v, 128, false), true)}
-                    <th>float128:</th>
-                    <td><input type="text" name="bin" readonly value="[TODO]"/></td>
+                    {viewer_tb('uint128', inspected.value.uint128, true)}
+                    {viewer_tb('float128', inspected.value.float128, true)}
                 </tr>
                 <tr>
-                    {viewer_tb('IPv4', v => `${v[0]}.${v[1]}.${v[2]}.${v[3]}`, true)}
+                    {viewer_tb('IPv4', inspected.value.ipv4, true)}
                     <th>IPv6:</th>
                     <td colSpan="3">
-                        <input type="text" name="dec" readonly value={`[${ipaddr.fromByteArray(value)}]`}/>
+                        <input type="text" name="dec" readonly value={inspected.value.ipv6}/>
                     </td>
                 </tr>
                 <tr>
-                    {viewer_tb('time_32t', v => unix_to_ISO_date(toint(v, 32, true)), true)}
-                    {/* {viewer_tb('time_64t', v => unix_to_ISO_date(toint(v, 64, true)), true)} */}
+                    {viewer_tb('time_32t', inspected.value.time32, true)}
 
                     <th>UUID:</th>
                     <td colSpan="3">
-                        <input type="text" name="dec" readonly value={uuid(value)}/>
+                        <input type="text" name="dec" readonly value={inspected.value.uuid}/>
                     </td>
                 </tr>
                 <tr>
                     <th>x86-32:</th>
-                    <td colSpan="3">
-                        <input type="text" name="dec" readonly/>
-                    </td>
+                    <td colSpan="3"><input type="text" name="dec" readonly/></td>
                 </tr>
                 <tr>
                     <th>x86-64:</th>
-                    <td colSpan="3">
-                        <input type="text" name="dec" readonly/>
-                    </td>
+                    <td colSpan="3"><input type="text" name="dec" readonly/></td>
                 </tr>
             </table>
+            : <div className="error">No data inspected yet.</div>}
         </binary-inspector>
     </binary-viewer>;
 }
+
 
 function CodeWindow({ data })
 {
@@ -360,15 +451,24 @@ function CodeWindow({ data })
     </code-window>;
 }
 
-export default function MainPage()
+function MainPage()
 {
+    const { current_file, set_current_file, upload_file } = React.useContext(FileContext);
+
+    React.useEffect(() =>
+    {
+        if (!current_file.value || !current_file.value.id)
+            set_current_file('test');
+    }, [current_file.value]);
+
+
     const bytes = new Uint8Array(2048);
     crypto.getRandomValues(bytes);
 
+
     return <>
         <header>
-            TEST
-            top lel
+            {/* <$>{current_file.value}</$> */}
         </header>
         <main>
             <pythia-input>
@@ -386,5 +486,9 @@ export default function MainPage()
         {/* <footer/> */}
     </>;
 }
+
+export const MainPageWrapper = () => <FileProvider>
+                                         <MainPage/>
+                                     </FileProvider>;
 
 const $ = element => <pre><code>{JSON.stringify(element, null, 4)}</code></pre> 
