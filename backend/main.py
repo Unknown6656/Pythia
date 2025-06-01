@@ -1,6 +1,7 @@
 from typing import Any
 import ipaddress
 import datetime
+import base64
 import json
 import uuid
 
@@ -10,7 +11,7 @@ from fastapi.responses import RedirectResponse
 import pyparsing as pp
 
 from parser import LayoutParser
-
+from files import PythiaFileInfo, PythiaFiles
 
 
 
@@ -49,33 +50,61 @@ def unix_to_ISO(unix : int) -> str:
                             [:19]
 
 
+BASE_URL = '/api'
 
-
-app = FastAPI()
+app = FastAPI(
+    docs_url = f'{BASE_URL}/docs',
+    redoc_url = f'{BASE_URL}/redoc',
+    openapi_url = f'{BASE_URL}/openapi.json'
+)
 parser = LayoutParser()
-files : dict[str, bytes] = {
-    'test': b'This is a test file.\n'
-}
+files = PythiaFiles()
 
 
-@app.get('/')
+# only for testing purposes
+files.create('test', b'\0\0\0\x2a\x14This is a test file.')
+
+
+@app.get(BASE_URL)
 def root() -> Response:
-    return RedirectResponse('/docs')
+    return RedirectResponse(f'{BASE_URL}/docs')
 
-@app.post('/file/upload')
+@app.post(f'{BASE_URL}/file/upload')
 async def file_upload(request : Request) -> Response:
-    global files
+    try:
+        json: dict[str, Any] = await request.json()
+        name: str | None = json.get('name', None)
+        data: str | None = json.get('data', None)
 
-    file: bytes = await request.body()
+        if not name or not data:
+            return Response(None, 400)
+
+        data_bytes: bytes = base64.b64decode(data)
+        comment: str | None = json.get('comment', None)
+        mime = str(json.get('mime', 'application/octet-stream'))
+
+        file: PythiaFileInfo = files.create(str(name), data_bytes, mime, comment)
+
+        return file_info(request, file.id, False)
+    except Exception as e:
+        print(f'Error parsing JSON: {e}')
+        return Response(None, 400)
+
+@app.post(f'{BASE_URL}/file/upload/raw')
+async def file_upload_raw(request : Request) -> Response:
+    data: bytes = await request.body()
     name = str(uuid.uuid4())
-    files[name] = file
+    files.create(
+        request.headers.get('X-Name', name),
+        data,
+        request.headers.get('Content-Type', 'application/octet-stream'),
+        request.headers.get('X-Comment')
+    )
 
-    return Response(name, 200)
+    return file_info(request, name, False)
 
-@app.get('/file/delete')
-def file_delete(request : Request, name : str) -> Response:
-    global files
-
+@app.get(f'{BASE_URL}/file/delete')
+def file_delete(request : Request, name : str | uuid.UUID) -> Response:
     if not name:
         return Response(None, 400)
     elif name not in files:
@@ -84,39 +113,63 @@ def file_delete(request : Request, name : str) -> Response:
         del files[name]
         return Response(None, 204)
 
-@app.get('/file/view')
-def file_view(request : Request, name : str) -> Response:
-    global files
-
+@app.get(f'{BASE_URL}/file/info')
+def file_info(request : Request, name : str | uuid.UUID, full : bool = False) -> Response:
     if not name:
         return Response(None, 400)
-    elif name not in files:
+
+    file: PythiaFileInfo | None = files[name]
+
+    if file is None:
+        return Response(None, 404)
+    else:
+        response : dict[str, Any] = {
+            'id': str(file.id),
+            'name': file.name,
+            'mime': file.mime,
+            'size': file.size,
+            'created': file.created.isoformat(),
+            'sha1': file.sha1,
+            'comment': file.comment
+        }
+
+        if full:
+            response['data'] = base64.b64encode(file.data).decode('utf-8')
+
+        return Response(json.dumps(response), 200, media_type = 'application/json')
+
+@app.get(f'{BASE_URL}/file/view')
+def file_view(request : Request, name : str | uuid.UUID) -> Response:
+    if not name:
+        return Response(None, 400)
+
+    file: PythiaFileInfo | None = files[name]
+
+    if file is None:
         return Response(None, 404)
     else:
         return Response(
-            files[name],
+            file.data,
             200,
-            media_type = 'application/octet-stream',
+            media_type = file.mime,
             headers = {
-                'Content-Disposition': f'attachment; filename={name}'
+                'Content-Disposition': f'attachment; filename={file.name}'
             }
         )
 
-@app.get('/file/inspect')
-def file_inspect(request : Request, name : str, offset : int, length : int = 16) -> Response:
-    global files
-
+@app.get(f'{BASE_URL}/file/inspect')
+def file_inspect(request : Request, name : str | uuid.UUID, offset : int, length : int = 16) -> Response:
     if not name or offset < 0 or length <= 0:
         return Response(None, 400)
-    elif name not in files:
+
+    file: PythiaFileInfo | None = files[name]
+
+    if file is None:
         return Response(None, 404)
-
-    content: bytes = files[name]
-
-    if offset >= len(content):
+    elif offset >= file.size:
         return Response(None, 400)
 
-    content = content[offset:min(offset + length, len(content))]
+    content: bytes = file.data[offset:min(offset + length, file.size)]
 
     if len(content) < 16:
         content += b'\x00' * (16 - len(content))
@@ -153,7 +206,7 @@ def file_inspect(request : Request, name : str, offset : int, length : int = 16)
 
     return Response(json.dumps(response), 200, media_type = 'application/json')
 
-@app.get('/code/parse')
+@app.get(f'{BASE_URL}/code/parse')
 def code_parse(request : Request, code : str) -> Response:
     try:
         parsed: list[dict[str, Any]] = parser(code)

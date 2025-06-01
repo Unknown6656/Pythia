@@ -134,8 +134,6 @@ class LayoutParser():
 
 
     def __call__(self: 'LayoutParser', string : str) -> list[dict[str, Any]]:
-        print('\x1b[2J\x1b[3J\x1b[!p')
-
         raw: pp.ParseResults = self.parser.parseString(string)
         parsed : list[dict[str, Any]] = []
 
