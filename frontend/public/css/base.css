@@ -316,3 +316,11 @@ binary-inspector input:focus {
     outline: none;
     color: #569CD6;
 }
+
+error-window,
+output-window {
+    overflow-y: scroll;
+    display: block;
+    height: 100%;
+    width: 100%;
+}

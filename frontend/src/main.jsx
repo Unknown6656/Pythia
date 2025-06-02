@@ -389,6 +389,7 @@ function CodeWindow()
                    onBlur={on_input}>
             struct TEST<br/>
             &#123;<br/>
+                pointer : int32*;<br/>
                 value : int32;<br/>
                 length : uint8;<br/>
                 text : char[length];<br/>
@@ -404,6 +405,32 @@ function CodeErrorWindow()
     return <code-error-window>
         <$ error={error.value}/>
     </code-error-window>;
+}
+
+function OutputWindow()
+{
+    const { parsed } = React.useContext(CodeContext);
+    const { current_file } = React.useContext(FileContext);
+    const interpreted = useVariable(null);
+
+    React.useEffect(() =>
+    {
+        if (parsed.value && current_file.value && current_file.value.id)
+            (async () =>
+            {
+                const data = await CallAPI('file/interpret', {
+                    code: parsed.value,
+                    name: current_file.value.id,
+                    offset: 0,
+                });
+
+                interpreted.set(data);
+            })();
+    }, [parsed.value, (current_file.value || { id: null }).id]);
+
+    return <output-window>
+        <$ interpreted={interpreted.value} parsed={parsed.value}/>
+    </output-window>;
 }
 
 function MainPage()
@@ -436,7 +463,7 @@ function MainPage()
                 <CodeErrorWindow/>
             </pythia-error>
             <pythia-output>
-                output
+                <OutputWindow/>
             </pythia-output>
             <separator v=""/>
             <separator h="1"/>
