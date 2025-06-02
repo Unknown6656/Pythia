@@ -24,7 +24,11 @@ files = PythiaFiles()
 
 
 # only for testing purposes
-files.create('test', b'\0\0\0\0\0\0\0\x08\0\0\0\x2a\x14This is a test file.')
+files.create('test', b'\x14This is a test file.\0\0\0\x2a\0\0\0\0\0\0\0\x15')
+
+
+def success(data : Any | None = None) -> Response:
+    return Response(json.dumps(data), 200, media_type = 'application/json')
 
 
 @app.get(BASE_URL)
@@ -151,38 +155,37 @@ async def file_inspect(request : Request) -> Response:
     if len(content) < 16:
         content += b'\x00' * (16 - len(content))
 
-    response : dict[str] = {
+    return success({
         'name': name,
         'offset': offset,
         'length': length,
         'value': content[0:1].hex(),
+        'binary': f'{content[0]:08b}',
         'ascii': content.decode('ascii', 'ignore'),
         'utf8': content.decode('utf-8', 'ignore'),
         'utf16': content.decode('utf-16', 'ignore'),
         'utf32': content.decode('utf-32', 'ignore'),
-        'int8': LayoutInterpreter.interpret(content, 'int8'),
-        'uint8': LayoutInterpreter.interpret(content, 'uint8'),
-        'int16': LayoutInterpreter.interpret(content, 'int16'),
-        'uint16': LayoutInterpreter.interpret(content, 'uint16'),
-        'int32': LayoutInterpreter.interpret(content, 'int32'),
-        'uint32': LayoutInterpreter.interpret(content, 'uint32'),
-        'int64': LayoutInterpreter.interpret(content, 'int64'),
-        'uint64': LayoutInterpreter.interpret(content, 'uint64'),
-        'int128': LayoutInterpreter.interpret(content, 'int128'),
-        'uint128': LayoutInterpreter.interpret(content, 'uint128'),
-        'time32': LayoutInterpreter.interpret(content, 'time32'),
-        'float16': LayoutInterpreter.interpret(content, 'float16'),
-        'float32': LayoutInterpreter.interpret(content, 'float32'),
-        'float64': LayoutInterpreter.interpret(content, 'float64'),
-        'float128': LayoutInterpreter.interpret(content, 'float128'),
-        'uuid': LayoutInterpreter.interpret(content, 'uuid'),
-        'ipv4': LayoutInterpreter.interpret(content, 'ipv4'),
-        'ipv6': LayoutInterpreter.interpret(content, 'ipv6'),
+        'int8': LayoutInterpreter.interpret_data(content, 'int8')[0],
+        'uint8': LayoutInterpreter.interpret_data(content, 'uint8')[0],
+        'int16': LayoutInterpreter.interpret_data(content, 'int16')[0],
+        'uint16': LayoutInterpreter.interpret_data(content, 'uint16')[0],
+        'int32': LayoutInterpreter.interpret_data(content, 'int32')[0],
+        'uint32': LayoutInterpreter.interpret_data(content, 'uint32')[0],
+        'int64': LayoutInterpreter.interpret_data(content, 'int64')[0],
+        'uint64': LayoutInterpreter.interpret_data(content, 'uint64')[0],
+        'int128': LayoutInterpreter.interpret_data(content, 'int128')[0],
+        'uint128': LayoutInterpreter.interpret_data(content, 'uint128')[0],
+        'time32': LayoutInterpreter.interpret_data(content, 'time32')[0],
+        'float16': LayoutInterpreter.interpret_data(content, 'float16')[0],
+        'float32': LayoutInterpreter.interpret_data(content, 'float32')[0],
+        'float64': LayoutInterpreter.interpret_data(content, 'float64')[0],
+        'float128': LayoutInterpreter.interpret_data(content, 'float128')[0],
+        'uuid': LayoutInterpreter.interpret_data(content, 'uuid')[0],
+        'ipv4': LayoutInterpreter.interpret_data(content, 'ipv4')[0],
+        'ipv6': LayoutInterpreter.interpret_data(content, 'ipv6')[0],
         'x86_32': None,  # TODO
         'x86_64': None,  # TODO
-    }
-
-    return Response(json.dumps(response), 200, media_type = 'application/json')
+    })
 
 @app.post(f'{BASE_URL}/file/interpret')
 async def file_parse(request : Request) -> Response:
@@ -198,10 +201,24 @@ async def file_parse(request : Request) -> Response:
     if file is None:
         return Response(None, 404)
 
-    interpreter = LayoutInterpreter(code, Endianness.LITTLE)
-    result: InterpretedLayout = interpreter(file.data)
+    try:
+        interpreter = LayoutInterpreter(code, Endianness.LITTLE)
+        result: InterpretedLayout = interpreter(file.data)
 
-    return Response(json.dumps(result.to_dict()), 200)
+        return success({
+            'success': True,
+            'error': None,
+            'data': result.to_dict(),
+        })
+    except Exception as e:
+        return success({
+            'success': False,
+            'error': {
+                'type': str(type(e)),
+                'message': str(e),
+            },
+            'data': None,
+        })
 
 @app.post(f'{BASE_URL}/code/parse')
 async def code_parse(request : Request) -> Response:
@@ -234,4 +251,4 @@ async def code_parse(request : Request) -> Response:
             'text': None,
         }
 
-    return Response(json.dumps(response), 200, media_type = 'application/json')
+    return success(response)

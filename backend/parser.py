@@ -11,15 +11,15 @@ import pyparsing as pp
 from common import toint, unix_to_ISO
 
 
-# 
+#
 # identifier          := /[a-z_]\w*/
-# 
+#
 # number              := /-?[0-9]+/
 #                      | /-?0b[01]+/
 #                      | /-?0x[0-9a-f]+/
-# 
+#
 # type_name_userdef   := identifier
-# 
+#
 # type_name_builtin   := 'bool'
 #                      | 'int8'
 #                      | 'uint8'
@@ -41,30 +41,30 @@ from common import toint, unix_to_ISO
 #                      | 'str'
 #                      | 'cstr'
 #                     ...
-# 
+#
 # type_name           := type_name_userdef
 #                      | type_name_builtin
-# 
+#
 # type_definition     := 'struct' type_name_userdef type_body
 #                      | 'union' type_name_userdef type_body
-# 
+#
 # type_body           := '{' type_fields '}' ';'
-# 
+#
 # type_fields         := [type_fields] type_field
-# 
+#
 # type_field          := identifier ':' type_identifier ';'
-# 
+#
 # type_identifier     := type_name
 #                      | type_identifier '[' array_size ']'
 #                      | type_identifier '*'
-# 
+#
 # array_dimension     := <empty>
 #                      | number
 #                      | type_name_userdef
-# 
+#
 # array_size          := array_dimension
 #                      | array_size ',' array_dimension
-# 
+#
 
 
 class LayoutParser():
@@ -85,7 +85,7 @@ class LayoutParser():
 
         keyword_struct = pp.Keyword('struct')
         keyword_union = pp.Keyword('union')
-        keyword_builtin = pp.Regex(r'(bool|(u?int|float)(16|32|64|128)|u?int8|uuid|time32|[cuw]?str|char(8|16|32)?|[uw]?char)')
+        keyword_builtin = pp.Regex(r'((u?int|float|bool)(16|32|64|128)|bool(8|ean)?|u?int8|byte|uuid|time32|(c[uw]?|[uw]c?)?str|char(8|16|32)?|[uw]?char)')
 
         token_identifier = pp.Word(pp.alphas + '_', pp.alphanums + '_')
 
@@ -248,24 +248,33 @@ class Endianness(Enum):
 class InterpretedLayout:
     def __init__(
             self : 'InterpretedLayout',
+            offset : int,
             raw: bytes,
-            name: str | None, 
-            data: str | None = None,
+            name: str | None,
+            repr: str | None = None,
+            data: Any | None = None,
             members: list['InterpretedLayout'] = []
     ) -> None:
         self.raw: bytes = raw
+        self.offset: int = offset
         self.name: str | None = name
         self.size: int = len(raw)
-        self.data: str | None = data
+        self.repr: str | None = repr
+        self.data: Any | None = data
         self.members: list['InterpretedLayout'] = members
+
+    def __str__(self : 'InterpretedLayout') -> str:
+        return f'{self.name}@[{self.offset}:{self.offset + self.size}, {self.size}]: "{self.repr}" ({self.data})'
 
     def to_dict(self : 'InterpretedLayout') -> dict[str, Any]:
         return {
             'raw': base64.b64encode(self.raw).decode('utf-8'),
+            'offset': self.offset,
             'name': self.name,
             'size': self.size,
-            'data': self.data,
-            'members': [member.to_dict() for member in self.members]
+            'repr': self.repr,
+            'data': str(self.data) if self.data is not None else None,
+            'members': [member.to_dict() for member in self.members],
         }
 
 
@@ -273,40 +282,50 @@ class InterpretedLayout:
 class InterpretationContext:
     def __init__(
             self : 'InterpretationContext',
-            global_data : bytes,
-            data : bytes,
+            parent : 'InterpretationContext | None',
             offset : int,
-            name : str | None,
-            qualified_name: str | None
+            data : bytes,
+            name : str | None
     ) -> None:
-        self.global_data = global_data
-        self.qualified_name = qualified_name
-        self.data = data[offset:]
-        self.name = name
+        self.parent: InterpretationContext | None = parent
+        self.data: bytes = data[offset:]
+        self.name: str | None = name
+        self.global_name: str | None = f'{parent.global_name}.{name}' if parent and name else (parent.global_name or name if parent else name)
+        self.global_data: bytes = parent.global_data if parent else data
+        self.global_offset: int = parent.global_offset + offset if parent else offset
+        self.scope : dict[str | None, Any] = { **parent.scope } if parent else { }
 
     def __str__(self : 'InterpretationContext') -> str:
-        return f'"{self.qualified_name or self.name}" @ {self.data.hex()[:16]}... ({self.data})'
+        return f'{self.global_name} @ {self.global_offset:08x}: {self.data}'
 
     @staticmethod
     def global_context(data : bytes, name : str | None) -> 'InterpretationContext':
-        return InterpretationContext(data, data, 0, name, name)
+        return InterpretationContext(None, 0, data, name)
 
     def local(self : 'InterpretationContext', offset : int, name : str | None = None) -> 'InterpretationContext':
-        return InterpretationContext(
-            self.global_data,
-            self.data,
-            offset,
-            name,
-            f'{self.qualified_name}.{name}' if len(self.qualified_name or '') and len(name or '') else (name or self.qualified_name)
-        )
+        return InterpretationContext(self, offset, self.data, name)
 
-    def result(self : 'InterpretationContext', size : int, repr : str | None, members : list[InterpretedLayout]) -> InterpretedLayout:
+    def result(self : 'InterpretationContext', size : int, repr : str | None, data : Any | None, members : list[InterpretedLayout]) -> InterpretedLayout:
         return InterpretedLayout(
+            offset = self.global_offset,
             raw = self.data[:size],
             name = self.name,
-            data = repr,
+            repr = repr,
+            data = data,
             members = members
         )
+
+    def resolve(self : 'InterpretationContext', member : str | list[str]) -> InterpretedLayout | None:
+        member : str = member if isinstance(member, str) else '.'.join(member)
+
+        if member in self.scope:
+            return self.scope[member]
+        elif f'{self.global_name}.{member}' in self.scope:
+            return self.scope[f'{self.global_name}.{member}']
+        elif self.parent is not None:
+            return self.parent.resolve(member)
+        else:
+            return None
 
 
 class LayoutInterpreter():
@@ -320,96 +339,129 @@ class LayoutInterpreter():
         self.pointer_size: int = pointer_size
 
     @staticmethod
-    def interpret(data : bytes, typename : str) -> tuple[str, int]:
+    def interpret_data(raw : bytes, typename : str) -> tuple[str, Any | None, int]:
         typename = typename.lower()
-        repr: str = f'(TODO: {typename})'
+        repr: str | None = None
+        data: Any | None = None
 
-        if typename == 'int8':
-            data = data[:1]
-            repr = toint(data, 8, True)
+        if typename in ['bool', 'boolean', 'bool8']:
+            raw = raw[:1]
+            repr, data = ('true', True) if raw[0] != 0 else ('false', False)
+        elif typename == 'bool16':
+            raw = raw[:2]
+            repr, data = ('true', True) if toint(raw, 16, False) != 0 else ('false', False)
+        elif typename == 'bool32':
+            raw = raw[:4]
+            repr, data = ('true', True) if toint(raw, 32, False) != 0 else ('false', False)
+        elif typename == 'bool64':
+            raw = raw[:8]
+            repr, data = ('true', True) if toint(raw, 64, False) != 0 else ('false', False)
+        elif typename == 'bool128':
+            raw = raw[:16]
+            repr, data = ('true', True) if toint(raw, 128, False) != 0 else ('false', False)
+        elif typename == 'int8':
+            raw = raw[:1]
+            repr, data = toint(raw, 8, True)
+        elif typename == 'byte':
+            raw = raw[:1]
+            data = raw[0]
+            repr = f'0x{raw[0]:02x}'
         elif typename == 'uint8':
-            data = data[:1]
-            repr = toint(data, 8, False)
+            raw = raw[:1]
+            repr, data = toint(raw, 8, False)
         elif typename == 'int16':
-            data = data[:2]
-            repr = toint(data, 16, True)
+            raw = raw[:2]
+            repr, data = toint(raw, 16, True)
         elif typename == 'uint16':
-            data = data[:2]
-            repr = toint(data, 16, False)
+            raw = raw[:2]
+            repr, data = toint(raw, 16, False)
         elif typename == 'int32':
-            data = data[:4]
-            repr = toint(data, 32, True)
+            raw = raw[:4]
+            repr, data = toint(raw, 32, True)
         elif typename == 'uint32':
-            data = data[:4]
-            repr = toint(data, 32, False)
+            raw = raw[:4]
+            repr, data = toint(raw, 32, False)
         elif typename == 'int64':
-            data = data[:8]
-            repr = toint(data, 64, True)
+            raw = raw[:8]
+            repr, data = toint(raw, 64, True)
         elif typename == 'uint64':
-            data = data[:8]
-            repr = toint(data, 64, False)
+            raw = raw[:8]
+            repr, data = toint(raw, 64, False)
         elif typename == 'int128':
-            data = data[:16]
-            repr = toint(data, 128, True)
+            raw = raw[:16]
+            repr, data = toint(raw, 128, True)
         elif typename == 'uint128':
-            data = data[:16]
-            repr = toint(data, 128, False)
+            raw = raw[:16]
+            repr, data = toint(raw, 128, False)
         elif typename == 'float16':
-            data = data[:2]
-            repr = '(TODO: float16)'
+            raw = raw[:2] # TODO
         elif typename == 'float32':
-            data = data[:4]
-            repr = str(float.fromhex(data.hex()))
+            raw = raw[:4]
+            data = float.fromhex(raw.hex())
         elif typename == 'float64':
-            data = data[:8]
-            repr = str(float.fromhex(data.hex()))
+            raw = raw[:8]
+            data = float.fromhex(raw.hex())
         elif typename == 'float128':
-            data = data[:16]
-            repr = '(TODO: float128)'
+            raw = raw[:16] # TODO
         elif typename == 'time32':
-            data = data[:4]
-            repr = unix_to_ISO(int.from_bytes(data, 'little'))
+            raw = raw[:4]
+            repr, data = unix_to_ISO(int.from_bytes(raw, 'little'))
         elif typename == 'uuid':
-            data = data[:16]
-            repr = str(uuid.UUID(bytes = data))
+            raw = raw[:16]
+            data = uuid.UUID(bytes = raw)
         elif typename == 'ipv4':
-            data = data[:4]
-            repr = f'{data[0]}.{data[1]}.{data[2]}.{data[3]}'
+            raw = raw[:4]
+            data = ipaddress.ip_address(raw)
+            repr = f'{raw[0]}.{raw[1]}.{raw[2]}.{raw[3]}'
         elif typename == 'ipv6':
-            data = data[:16]
-            repr = f'[{ipaddress.ip_address(data).compressed}]'
-        elif typename == 'char8' or typename == 'char':
-            data = data[:1]
-            repr = data.decode('ascii', 'ignore')
-        elif typename == 'char16' or typename == 'wchar':
-            data = data[:2]
-            repr = data.decode('utf-16', 'ignore')
-        elif typename == 'char32': pass # utf-32
+            raw = raw[:16]
+            data = ipaddress.ip_address(raw)
+            repr = f'[{data.compressed}]'
+        elif typename in ['char8', 'char']:
+            raw = raw[:1]
+            repr = data = raw.decode('ascii', 'ignore')
+        elif typename in ['char16', 'wchar']:
+            raw = raw[:2]
+            repr = data = raw.decode('utf-16', 'ignore')
+        elif typename == 'char32':
+            pass # TODO: utf-32 char
         elif typename == 'uchar':
-            if data[0] >> 7 == 0b0:
-                data = data[:1]
-            elif data[0] >> 5 == 0b110:
-                data = data[:2]
-            elif data[0] >> 4 == 0b1110:
-                data = data[:3]
+            if raw[0] >> 7 == 0b0:
+                raw = raw[:1]
+            elif raw[0] >> 5 == 0b110:
+                raw = raw[:2]
+            elif raw[0] >> 4 == 0b1110:
+                raw = raw[:3]
             else:
-                data = data[:4]
+                raw = raw[:4]
 
-            repr = data.decode('utf-8', 'ignore')
-        elif typename == 'str' or typename == 'cstr': pass # zero-terminated string
-        elif typename == 'wstr': pass # zero-terminated utf-16 string
-        elif typename == 'ustr': pass # zero-terminated utf-8 string
+            data = repr = raw.decode('utf-8', 'ignore')
+        elif typename in ['str', 'cstr']:
+            pass # TODO: zero-terminated ascii string
+        elif typename in ['wstr', 'cwstr', 'wcstr']:
+            pass # TODO: zero-terminated utf-16 string
+        elif typename in ['ustr', 'custr', 'ucstr']:
+            pass # TODO: zero-terminated utf-8 string
+        # TODO: length-prefixed strings (ascii, utf-16, utf-8)
 
-        return repr, len(data)
+        if repr is None:
+            repr = f'(TODO: {typename})' if data is None else str(data)
+
+        return repr, data, len(raw)
 
     def _interpret_builtin_type(self : 'LayoutInterpreter', context : InterpretationContext, typename : str) -> InterpretedLayout:
-        repr, size = LayoutInterpreter.interpret(context.data, typename)
+        repr, data, size = LayoutInterpreter.interpret_data(context.data, typename)
 
-        return InterpretedLayout(context.data[:size], context.name, repr)
+        return InterpretedLayout(
+            context.global_offset,
+            context.data[:size],
+            context.name,
+            repr,
+            data,
+            []
+        )
 
-    def _interpret_pointer(self : 'LayoutInterpreter', context : InterpretationContext, type : dict[str, Any]) -> InterpretedLayout:
-        print('-------- POINTER',context)
-
+    def _interpret_pointer(self : 'LayoutInterpreter', context : InterpretationContext, base : dict[str, Any]) -> InterpretedLayout:
         data: bytes = context.data[:self.pointer_size]
         address: int = 0
 
@@ -417,21 +469,36 @@ class LayoutInterpreter():
             address <<= 8
             address |= data[i] & 0xFF
 
-        subcontext = InterpretationContext(
-            context.global_data,
-            context.global_data,
-            address,
-            context.name,
-            context.qualified_name
-        )
-        value: InterpretedLayout = self._interpret_member(subcontext, type)
+        subcontext = InterpretationContext(None, address, context.global_data, None)
+        value: InterpretedLayout = self._interpret_member(subcontext, base)
 
-        return context.result(self.pointer_size, f'0x{address:0{self.pointer_size * 2}x}', [value])
+        return context.result(self.pointer_size, f'[0x{address:0{self.pointer_size * 2}x}]', value.data, [value])
+
+    def _interpret_array(self : 'LayoutInterpreter', context : InterpretationContext, base : dict[str, Any], size : dict[str, Any] | int | None, sizetype : str) -> InterpretedLayout:
+        elements : list[InterpretedLayout] = []
+        intsize : int = 0
+        offset : int = 0
+
+        if sizetype == 'fixed':
+            intsize = max(0, size if isinstance(size, int) else 0)
+        elif sizetype == 'reference':
+            reference : list[str] = size['name']
+
+            if (member := context.resolve(reference)) is not None:
+                intsize = int(member.data or 0)
+        elif sizetype == 'dynamic':
+            raise NotImplementedError(f'Dynamic arrays are not supported yet: {context}')
+
+        for i in range(intsize):
+            subcontext: InterpretationContext = context.local(offset, None)
+            value: InterpretedLayout = self._interpret_member(subcontext, base)
+            offset += value.size
+            elements.append(value)
+
+        return context.result(offset, f'{len(elements)} Items', [e.data for e in elements], elements)
 
     def _interpret_member(self : 'LayoutInterpreter', context : InterpretationContext, type : dict[str, Any]) -> InterpretedLayout:
         _type: str = type['$type']
-
-        print('-------- MEMBER',context)
 
         if _type == 'type':
             if type['builtin']:
@@ -442,17 +509,15 @@ class LayoutInterpreter():
         elif _type == 'pointer':
             return self._interpret_pointer(context, type['base'])
         elif _type == 'array':
-            pass
+            return self._interpret_array(context, type['base'], type['size'], type['$size'])
         elif _type == 'struct':
-            pass
-        elif _type == 'unknown':
-            pass
+            return self._interpret_struct(context, type['body']['members'])
+        elif _type == 'union':
+            return self._interpret_union(context, type['body']['members'])
 
-        return context.result(0, None, [])
+        return context.result(0, f'(unknown: {type})', None, [])
 
     def _interpret_union(self : 'LayoutInterpreter', context : InterpretationContext, members : list[dict[str, Any]]) -> InterpretedLayout:
-        print('-------- UNION',context,'\n',members)
-
         interpreted_members: list[InterpretedLayout] = []
         size: int = 0
 
@@ -460,12 +525,11 @@ class LayoutInterpreter():
             interpreted_member: InterpretedLayout = self._interpret_member(context.local(0, member['name']), member['type'])
             interpreted_members.append(interpreted_member)
             size = max(size, interpreted_member.size)
+            context.scope[f'{context.global_name}.{interpreted_member.name}'] = interpreted_member
 
-        return context.result(size, None, interpreted_members)
+        return context.result(size, 'union { ... }', {m.name:m.data for m in interpreted_members}, interpreted_members)
 
     def _interpret_struct(self : 'LayoutInterpreter', context : InterpretationContext, members : list[dict[str, Any]]) -> InterpretedLayout:
-        print('-------- STRUCT',context,'\n',members)
-
         interpreted_members: list[InterpretedLayout] = []
         offset = 0
 
@@ -473,18 +537,19 @@ class LayoutInterpreter():
             interpreted_member: InterpretedLayout = self._interpret_member(context.local(offset, member['name']), member['type'])
             interpreted_members.append(interpreted_member)
             offset += interpreted_member.size
+            context.scope[f'{context.global_name}.{interpreted_member.name}'] = interpreted_member
 
-        return context.result(offset, None, interpreted_members)
+        return context.result(offset, 'struct { ... }', {m.name:m.data for m in interpreted_members}, interpreted_members)
 
     def __call__(self: 'LayoutInterpreter', data : bytes) -> InterpretedLayout:
         _type: str = self.layout['$type']
         context: InterpretationContext = InterpretationContext.global_context(data, self.layout.get('name'))
 
-        print('-------- INTERPRET',data,'\n',self.layout)
-
         if _type == 'struct':
             return self._interpret_struct(context, self.layout['body']['members'])
         elif _type == 'union':
             return self._interpret_union(context, self.layout['body']['members'])
+        else:
+            raise ValueError(f'Unknown layout type: {_type}')
 
-        raise ValueError(f'Unknown layout type: {_type}')
+

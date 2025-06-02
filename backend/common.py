@@ -1,4 +1,4 @@
-import datetime
+from datetime import datetime, timezone
 
 
 def uncomplement(value : int, bitwidth : int) -> int:
@@ -11,11 +11,11 @@ def uncomplement(value : int, bitwidth : int) -> int:
     else:
         return value
 
-def toint(array : bytes, bitwidth : int, signed : bool) -> str:
+def toint(array : bytes, bitwidth : int, signed : bool) -> tuple[str, int]:
     if not len(array) or bitwidth <= 0:
-        return '0'
+        return '0', 0
 
-    value = 0
+    value : int = 0
 
     for i in range(bitwidth >> 3):
         value <<= 8
@@ -24,10 +24,9 @@ def toint(array : bytes, bitwidth : int, signed : bool) -> str:
     if signed:
         value = uncomplement(value, bitwidth)
 
-    return f'{value:_d}'.replace('_', "'")
+    return f'{value:_d}'.replace('_', "'"), value
 
-def unix_to_ISO(unix : int) -> str:
-    return datetime.datetime.fromtimestamp(unix, datetime.timezone.utc) \
-                            .isoformat() \
-                            .replace('T', ' ') \
-                            [:19]
+def unix_to_ISO(unix : int) -> tuple[str, datetime]:
+    date: datetime = datetime.fromtimestamp(unix, timezone.utc)
+
+    return date.isoformat().replace('T', ' ')[:19], date
