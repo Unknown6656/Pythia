@@ -134,7 +134,7 @@ main {
     flex: 1;
 
     grid-template-columns: auto 1px 1fr;
-    grid-template-rows: 2fr 1px auto 1px 3fr;
+    grid-template-rows: 1fr 1px auto 1px 2fr;
 }
 
 main > * {
@@ -226,6 +226,7 @@ binary-data td {
 binary-data table thead {
     backdrop-filter: blur(15px);
     border-bottom: 1px solid currentcolor;
+    pointer-events: none;
     position: sticky;
     z-index: 1;
     top: 0;
@@ -236,6 +237,7 @@ binary-data table thead th {
 }
 
 binary-data table tr th:first-child {
+    pointer-events: none;
     color: #a6a6a6;
 }
 
@@ -270,7 +272,6 @@ binary-data table:hover tr:not(:hover) {
 binary-data table th[empty],
 binary-data table td[empty] {
     pointer-events: none;
-    cursor: default;
 }
 
 
@@ -323,4 +324,13 @@ output-window {
     display: block;
     height: 100%;
     width: 100%;
+}
+
+output-window parsed-item {
+    background-color: #569CD630;
+    border: 1px solid currentcolor;
+    border-radius: .5ch;
+    flex-direction: column;
+    padding: 1ch 1ch 1ch 2ch;
+    display: flex;
 }

@@ -388,12 +388,15 @@ function CodeWindow()
                    onPaste={on_input}
                    onBlur={on_input}>
             struct TEST<br/>
-            &#123;<br/>
-                pointer : int32*;<br/>
-                value : int32;<br/>
+            &#x7b;<br/>
                 length : uint8;<br/>
                 text : char[length];<br/>
-            &#125;;<br/>
+                composite : struct<br/>
+                &#x7b;<br/>
+                    value : int32;<br/>
+                    pointer : int32*;<br/>
+                &#x7d;;<br/>
+            &#x7d;;<br/>
         </code></pre>
     </code-window>;
 }
@@ -428,8 +431,23 @@ function OutputWindow()
             })();
     }, [parsed.value, (current_file.value || { id: null }).id]);
 
+    function RenderElement({ element })
+    {
+        return <parsed-item>
+            <span>{element.name} : {element.repr}</span>
+            {element.members.map((m, i) => <RenderElement element={m} key={i}/>)}
+        </parsed-item>;
+    }
+
     return <output-window>
-        <$ interpreted={interpreted.value} parsed={parsed.value}/>
+        
+        {interpreted.value && interpreted.value.success ? <RenderElement element={interpreted.value.data}/> : null}
+
+
+        <br/>
+        <hr/>
+        <br/>
+        {<$ interpreted={interpreted.value} parsed={parsed.value}/>}
     </output-window>;
 }
 
