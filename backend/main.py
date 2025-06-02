@@ -1,6 +1,4 @@
 from typing import Any
-import ipaddress
-import datetime
 import base64
 import json
 import uuid
@@ -10,7 +8,7 @@ from fastapi.responses import RedirectResponse
 
 import pyparsing as pp
 
-from parser import LayoutParser
+from parser import LayoutParser, LayoutInterpreter, InterpretedLayout, Endianness
 from files import PythiaFileInfo, PythiaFiles
 
 
@@ -26,7 +24,7 @@ files = PythiaFiles()
 
 
 # only for testing purposes
-files.create('test', b'\0\0\0\x2a\x14This is a test file.')
+files.create('test', b'\0\0\0\0\0\0\0\x08\0\0\0\x2a\x14This is a test file.')
 
 
 @app.get(BASE_URL)
@@ -162,28 +160,48 @@ async def file_inspect(request : Request) -> Response:
         'utf8': content.decode('utf-8', 'ignore'),
         'utf16': content.decode('utf-16', 'ignore'),
         'utf32': content.decode('utf-32', 'ignore'),
-        'int8': toint(content, 8, True),
-        'uint8': toint(content, 8, False),
-        'int16': toint(content, 16, True),
-        'uint16': toint(content, 16, False),
-        'int32': toint(content, 32, True),
-        'uint32': toint(content, 32, False),
-        'int64': toint(content, 64, True),
-        'uint64': toint(content, 64, False),
-        'int128': toint(content, 128, True),
-        'uint128': toint(content, 128, False),
-        'time32': unix_to_ISO(int.from_bytes(content[0:4], 'little')),
-        'float32': str(float.fromhex(content[0:4].hex())),
-        'float64': str(float.fromhex(content[0:8].hex())),
-        'float128': None, # TODO
-        'uuid': str(uuid.UUID(bytes = content[0:16])),
-        'ipv4': f'{content[0]}.{content[1]}.{content[2]}.{content[3]}',
-        'ipv6': f'[{ipaddress.ip_address(content[0:16]).compressed}]',
+        'int8': LayoutInterpreter.interpret(content, 'int8'),
+        'uint8': LayoutInterpreter.interpret(content, 'uint8'),
+        'int16': LayoutInterpreter.interpret(content, 'int16'),
+        'uint16': LayoutInterpreter.interpret(content, 'uint16'),
+        'int32': LayoutInterpreter.interpret(content, 'int32'),
+        'uint32': LayoutInterpreter.interpret(content, 'uint32'),
+        'int64': LayoutInterpreter.interpret(content, 'int64'),
+        'uint64': LayoutInterpreter.interpret(content, 'uint64'),
+        'int128': LayoutInterpreter.interpret(content, 'int128'),
+        'uint128': LayoutInterpreter.interpret(content, 'uint128'),
+        'time32': LayoutInterpreter.interpret(content, 'time32'),
+        'float16': LayoutInterpreter.interpret(content, 'float16'),
+        'float32': LayoutInterpreter.interpret(content, 'float32'),
+        'float64': LayoutInterpreter.interpret(content, 'float64'),
+        'float128': LayoutInterpreter.interpret(content, 'float128'),
+        'uuid': LayoutInterpreter.interpret(content, 'uuid'),
+        'ipv4': LayoutInterpreter.interpret(content, 'ipv4'),
+        'ipv6': LayoutInterpreter.interpret(content, 'ipv6'),
         'x86_32': None,  # TODO
         'x86_64': None,  # TODO
     }
 
     return Response(json.dumps(response), 200, media_type = 'application/json')
+
+@app.post(f'{BASE_URL}/file/interpret')
+async def file_parse(request : Request) -> Response:
+    reqjson: dict[str, Any] = await request.json()
+    name: str | None = reqjson.get('name', None)
+    code: dict[str, Any] | None = reqjson.get('code', None)
+
+    if not name or not code:
+        return Response(None, 400)
+
+    file: PythiaFileInfo | None = files[name]
+
+    if file is None:
+        return Response(None, 404)
+
+    interpreter = LayoutInterpreter(code, Endianness.LITTLE)
+    result: InterpretedLayout = interpreter(file.data)
+
+    return Response(json.dumps(result.to_dict()), 200)
 
 @app.post(f'{BASE_URL}/code/parse')
 async def code_parse(request : Request) -> Response:
