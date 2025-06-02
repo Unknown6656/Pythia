@@ -14,42 +14,6 @@ from parser import LayoutParser
 from files import PythiaFileInfo, PythiaFiles
 
 
-
-
-# const uuid = array => `{${hex(array[0])}${hex(array[1])}${hex(array[2])}${hex(array[3])}-${hex(array[4])}${hex(array[5])}-${hex(array[6])}${hex(array[7])}-${hex(array[8])}${hex(array[9])}-${hex(array[10])}${hex(array[11])}${hex(array[12])}${hex(array[13])}${hex(array[14])}${hex(array[15])}}`;
-
-def uncomplement(value : int, bitwidth : int) -> int:
-    if value & (1 << (bitwidth - 1)):
-        boundary : int = (1 << bitwidth)
-        minval : int = -boundary
-        mask : int = boundary - 1
-
-        return minval + (value & mask)
-    else:
-        return value
-
-def toint(array : bytes, bitwidth : int, signed : bool) -> str:
-    if not len(array) or bitwidth <= 0:
-        return '0'
-
-    value = 0
-
-    for i in range(bitwidth >> 3):
-        value <<= 8
-        value |= array[i] & 0xFF
-
-    if signed:
-        value = uncomplement(value, bitwidth)
-
-    return f'{value:_d}'.replace('_', "'")
-
-def unix_to_ISO(unix : int) -> str:
-    return datetime.datetime.fromtimestamp(unix, datetime.timezone.utc) \
-                            .isoformat() \
-                            .replace('T', ' ') \
-                            [:19]
-
-
 BASE_URL = '/api'
 
 app = FastAPI(
