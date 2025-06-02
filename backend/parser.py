@@ -117,10 +117,8 @@ class LayoutParser():
         )
 
         token_inline_type_definition = pp.Group(
-            # symbol_leftparen +
             (keyword_struct | keyword_union)('type') +
             token_type_body('body')
-            # + symbol_rightparen
         )
 
         token_array_dimension = pp.Group(number('fixed') | token_qualified_typename('dynamic'))
@@ -134,8 +132,8 @@ class LayoutParser():
         token_type_suffix = pp.ZeroOrMore(pp.Group(symbol_pointer('pointer') | token_array_size('array')))
 
         token_type_identifier <<= pp.Group(
-            token_inline_type_definition('inline') |
-            (token_typename('base') + token_type_suffix('suffix'))
+            (token_inline_type_definition('inline') | token_typename('base')) +
+            token_type_suffix('suffix')
         )
 
         self.parser: pp.ParserElement = token_type_definition.ignore_whitespace()
@@ -474,7 +472,7 @@ class LayoutInterpreter():
             address <<= 8
             address |= data[i] & 0xFF
 
-        subcontext = InterpretationContext(None, address, context.global_data, None)
+        subcontext = InterpretationContext(None, address, context.global_data, '[0]')
         value: InterpretedLayout = self._interpret_member(subcontext, base)
 
         return context.result(self.pointer_size, f'[0x{address:0{self.pointer_size * 2}x}]', value.data, [value])
@@ -495,7 +493,7 @@ class LayoutInterpreter():
             raise NotImplementedError(f'Dynamic arrays are not supported yet: {context}')
 
         for i in range(intsize):
-            subcontext: InterpretationContext = context.local(offset, None)
+            subcontext: InterpretationContext = context.local(offset, f'[{i}]')
             value: InterpretedLayout = self._interpret_member(subcontext, base)
             offset += value.size
             elements.append(value)
