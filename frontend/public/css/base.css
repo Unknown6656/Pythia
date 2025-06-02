@@ -181,7 +181,6 @@ pythia-output {
     grid-row: 5;
 }
 
-pythia-code,
 pythia-error,
 pythia-output {
     margin: 1ch;
@@ -318,6 +317,14 @@ binary-inspector input:focus {
     color: #569CD6;
 }
 
+pythia-code .prism-code-editor {
+    backdrop-filter: blur(15px);
+    background-color: #22222255;
+    position: relative;
+    height: 100%;
+    width: 100%;
+}
+
 error-window,
 output-window {
     overflow-y: scroll;
@@ -327,10 +334,10 @@ output-window {
 }
 
 output-window parsed-item {
-    background-color: #569CD630;
-    border: 1px solid currentcolor;
-    border-radius: .5ch;
+    border: .5px solid currentcolor;
+    background-color: #22224477;
     flex-direction: column;
     padding: 1ch 1ch 1ch 2ch;
+    margin: .5ch;
     display: flex;
 }

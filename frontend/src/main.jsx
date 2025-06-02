@@ -1,9 +1,18 @@
-/* global BigInt */
-
 import React from 'react';
 import { Buffer } from 'buffer';
-import ipaddr from 'ipaddr.js';
-import { on } from 'events';
+
+
+import { Editor } from 'prism-react-editor';
+import { BasicSetup } from 'prism-react-editor/setups'
+// import { matchBrackets } from 'prism-react-editor/match-brackets';
+
+import 'prism-react-editor/prism/languages/cpp'
+import 'prism-react-editor/languages/common'
+
+import 'prism-react-editor/layout.css'
+import 'prism-react-editor/themes/github-dark.css'
+import 'prism-react-editor/search.css'
+import 'prism-react-editor/invisibles.css'
 
 
 
@@ -100,6 +109,19 @@ async function CallAPI(url, data)
 
 
 
+const INITIAL_CODE = `// example code for Pythia
+
+struct TEST
+{
+    length : uint8;
+    text : char[length];
+    composite : struct
+    {
+        value : int32;
+        pointer : int32*;
+    };
+};
+`;
 const FileContext = React.createContext(null);
 const CodeContext = React.createContext(null);
 
@@ -136,13 +158,15 @@ function FileProvider({ children })
 
 function CodeProvider({ children })
 {
-    const code = useVariable(null);
+    const code = useVariable(INITIAL_CODE);
     const parsed = useVariable(null);
     const error = useVariable(null);
 
     const set_code = async code_text =>
     {
         code_text = code_text.trim();
+
+        console.log('#################### SET CODE', code_text);
 
         if (code_text === code.value)
             return;
@@ -178,9 +202,6 @@ function CodeProvider({ children })
         {children}
     </CodeContext.Provider>;
 }
-
-
-
 
 function BinaryViewer()
 {
@@ -370,35 +391,18 @@ function BinaryViewer()
     </binary-viewer>;
 }
 
-function CodeWindow()
+function CodeEditor()
 {
-    const { set_code } = React.useContext(CodeContext);
-    const tb_ref = React.useRef(null);
-    const on_input = async e => set_code((tb_ref.current || e.target).innerText.trim());
+    const { code, set_code } = React.useContext(CodeContext);
 
-    React.useEffect(() =>
-    {
-        on_input();
-    }, []);
-
-    return <code-window>
-        <pre><code contentEditable="plaintext-only"
-                   ref={tb_ref}
-                   onInput={on_input}
-                   onPaste={on_input}
-                   onBlur={on_input}>
-            struct TEST<br/>
-            &#x7b;<br/>
-                length : uint8;<br/>
-                text : char[length];<br/>
-                composite : struct<br/>
-                &#x7b;<br/>
-                    value : int32;<br/>
-                    pointer : int32*;<br/>
-                &#x7d;;<br/>
-            &#x7d;;<br/>
-        </code></pre>
-    </code-window>;
+    return <Editor language="cpp"
+                   tabSize={4}
+                   insertSpaces={true}
+                   value={INITIAL_CODE}
+                   onChange={set_code}
+                   onUpdate={(value, editor) => set_code(value)}>
+        {editor => <BasicSetup editor={editor} />}
+    </Editor>
 }
 
 function CodeErrorWindow()
@@ -468,14 +472,14 @@ function MainPage()
 
     return <>
         <header>
-            {/* <$>{current_file.value}</$> */}
+            <h1>Pythia &mdash; A binary data reverse engineering application</h1>
         </header>
         <main>
             <pythia-input>
                 <BinaryViewer/>
             </pythia-input>
             <pythia-code>
-                <CodeWindow/>
+                <CodeEditor/>
             </pythia-code>
             <pythia-error>
                 <CodeErrorWindow/>
