@@ -71,6 +71,8 @@ class LayoutParser():
     def __init__(self : 'LayoutParser') -> None:
         number = pp.Regex(r'-?(\d+|0b[01]+|0x[0-9a-fA-F]+)')
 
+        comment: pp.ParserElement = pp.cpp_style_comment | pp.python_style_comment
+
         symbol_dot = pp.Suppress('.')
         symbol_comma = pp.Suppress(',')
         symbol_pointer = pp.Word('*', exact = 1)
@@ -85,7 +87,7 @@ class LayoutParser():
 
         keyword_struct = pp.Keyword('struct')
         keyword_union = pp.Keyword('union')
-        keyword_builtin = pp.Regex(r'((u?int|float|bool)(16|32|64|128)|bool(8|ean)?|u?int8|byte|uuid|time32|(c[uw]?|[uw]c?)?str|char(8|16|32)?|[uw]?char)')
+        keyword_builtin = pp.Regex(r'((u?int|float|bool)(16|32|64|128)|bool(8|ean)?|u?int8|byte|uuid|time32|(c[uw]?|[uw]c?)?str|c?str16|char(8|16|32)?|[uw]?char)')
 
         token_identifier = pp.Word(pp.alphas + '_', pp.alphanums + '_')
 
@@ -137,6 +139,7 @@ class LayoutParser():
         )
 
         self.parser: pp.ParserElement = token_type_definition.ignore_whitespace()
+        self.parser.ignore(comment)
         # self.parser.set_debug(True, True)
 
 
@@ -437,9 +440,11 @@ class LayoutInterpreter():
 
             data = repr = raw.decode('utf-8', 'ignore')
         elif typename in ['str', 'cstr']:
-            pass # TODO: zero-terminated ascii string
-        elif typename in ['wstr', 'cwstr', 'wcstr']:
-            pass # TODO: zero-terminated utf-16 string
+            raw = raw.split(b'\x00', 1)[0]
+            repr = data = raw.decode('ascii', 'ignore')
+        elif typename in ['wstr', 'cwstr', 'wcstr', 'cstr16', 'str16']:
+            raw = raw.split(b'\x00\x00', 1)[0]
+            repr = data = raw.decode('utf-16', 'ignore')
         elif typename in ['ustr', 'custr', 'ucstr']:
             pass # TODO: zero-terminated utf-8 string
         # TODO: length-prefixed strings (ascii, utf-16, utf-8)
