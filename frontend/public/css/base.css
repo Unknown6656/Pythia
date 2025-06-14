@@ -15,6 +15,9 @@
     unicode-bidi: isolate;
     box-sizing: border-box;
     margin: 0px;
+
+    --bg-filter: blur(15px);
+    --bg-color: #22222255;
 }
 
 *, *::before, *::after {
@@ -64,7 +67,7 @@
     position: absolute;
     display: block;
     background-color: #1E1E1E;
-    color: #ddd;
+    color: white;
 
     transition-timing-function: ease;
     transition-property: all;
@@ -181,7 +184,6 @@ pythia-output {
     grid-row: 5;
 }
 
-pythia-error,
 pythia-output {
     margin: 1ch;
 }
@@ -223,7 +225,8 @@ binary-data td {
 }
 
 binary-data table thead {
-    backdrop-filter: blur(15px);
+    background-color: var(--bg-color);
+    backdrop-filter: var(--bg-filter);
     border-bottom: 1px solid currentcolor;
     pointer-events: none;
     position: sticky;
@@ -264,7 +267,8 @@ binary-data table:not(:hover) td:not([active]) {
     opacity: .8;
 }
 
-binary-data table:hover tr:not(:hover) {
+binary-data table:has(td:hover) tr:not(:hover),
+binary-data table:has(th:hover) tr:not(:hover) {
     opacity: .5;
 }
 
@@ -272,7 +276,6 @@ binary-data table th[empty],
 binary-data table td[empty] {
     pointer-events: none;
 }
-
 
 binary-data span.error {
     color: #F44747;
@@ -301,7 +304,8 @@ binary-inspector th {
 
 binary-inspector input {
     font-family: var(--font-code);
-    background-color: #252526;
+    background-color: var(--bg-color);
+    backdrop-filter: var(--bg-filter);
     border: 1px solid currentcolor;
     text-align: right;
     font-size: 1rem;
@@ -318,14 +322,49 @@ binary-inspector input:focus {
 }
 
 pythia-code .prism-code-editor {
-    backdrop-filter: blur(15px);
-    background-color: #22222255;
+    background-color: var(--bg-color);
+    backdrop-filter: var(--bg-filter);
     position: relative;
     height: 100%;
     width: 100%;
 }
 
-error-window,
+pythia-code .prism-code-editor error-indicator {
+    animation: error-indicator-pulse 1.5s infinite ease-in-out;
+    background-color: #ff000050;
+    border-bottom: 3px dashed red;
+    margin-left: var(--padding-left);
+    position: relative;
+    padding: 0px;
+    height: 1lh;
+}
+
+@keyframes error-indicator-pulse {
+    0% {
+        opacity: 1;
+    }
+    50% {
+        opacity: .6;
+    }
+    100% {
+        opacity: 1;
+    }
+}
+
+pythia-error-status[status] {
+    backdrop-filter: var(--bg-filter);
+    background-color: #4c0c0c70;
+    border: 1px solid currentcolor;
+    display: block;
+    padding: 1ch;
+    color: #f47c7c;
+}
+
+pythia-error-status[status="ok" I] {
+    background-color: #043a1370;
+    color: #3bbe14;
+}
+
 output-window {
     overflow-y: scroll;
     display: block;
@@ -333,11 +372,66 @@ output-window {
     width: 100%;
 }
 
-output-window parsed-item {
-    border: .5px solid currentcolor;
-    background-color: #22224477;
-    flex-direction: column;
-    padding: 1ch 1ch 1ch 2ch;
-    margin: .5ch;
-    display: flex;
+output-window table.output-structure {
+    border-collapse: collapse;
+    border: 0px solid transparent;
+}
+
+output-window table.output-structure tr {
+    font-family: var(--font-code);
+}
+
+output-window table.output-structure thead {
+    pointer-events: none;
+}
+
+output-window table.output-structure thead th {
+    padding-bottom: 1ch;
+}
+
+output-window table.output-structure td,
+output-window table.output-structure th {
+    vertical-align: middle;
+    text-align: left;
+    padding: .25ch 1ch;
+}
+
+output-window table.output-structure tr:hover {
+    backdrop-filter: var(--bg-filter);
+    background-color: #45454540;
+    color: #D7BA7D;
+}
+
+output-window table.output-structure:has(td:hover) tr:not(:hover),
+output-window table.output-structure:has(th:hover) tr:not(:hover) {
+    opacity: .9;
+}
+
+output-window table.output-structure element-name {
+    background-position: center left;
+    background-repeat: no-repeat;
+    background-size: 1lh;
+    display: table;
+    height: 1lh;
+    width: 1lh;
+}
+
+output-window table.output-structure element-name[state="open" I] {
+    background-image: url('../img/icon-arrow-down.svg');
+    cursor: pointer;
+}
+
+output-window table.output-structure element-name[state="closed" I] {
+    background-image: url('../img/icon-arrow-right.svg');
+    cursor: pointer;
+}
+
+output-window table.output-structure element-name::after {
+    margin-left: 2ch;
+    content: attr(displayname);
+    display: block;
+}
+
+output-window table.output-structure a {
+    cursor: pointer;
 }
