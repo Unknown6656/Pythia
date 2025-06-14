@@ -1,18 +1,18 @@
 import React from 'react';
 import { Buffer } from 'buffer';
 
-
 import { Editor } from 'prism-react-editor';
-import { BasicSetup } from 'prism-react-editor/setups'
+import { languages } from 'prism-react-editor/prism';
+import { BasicSetup } from 'prism-react-editor/setups';
 // import { matchBrackets } from 'prism-react-editor/match-brackets';
 
-import 'prism-react-editor/prism/languages/cpp'
-import 'prism-react-editor/languages/common'
+import 'prism-react-editor/languages/common';
+import 'prism-react-editor/prism/languages/cpp';
 
-import 'prism-react-editor/layout.css'
-import 'prism-react-editor/themes/github-dark.css'
-import 'prism-react-editor/search.css'
-import 'prism-react-editor/invisibles.css'
+import 'prism-react-editor/layout.css';
+import 'prism-react-editor/themes/github-dark.css';
+import 'prism-react-editor/search.css';
+import 'prism-react-editor/invisibles.css';
 
 
 
@@ -108,7 +108,6 @@ async function CallAPI(url, data)
 
 
 
-
 const INITIAL_CODE = `// example code for Pythia
 
 struct TEST
@@ -125,9 +124,13 @@ struct TEST
 const FileContext = React.createContext(null);
 const CodeContext = React.createContext(null);
 
+
 function FileProvider({ children })
 {
+    const cursor_pos = useVariable(0);
+    const cursor_len = useVariable(1);
     const file = useVariable(null);
+
     const set_current_file = async id_or_name =>
     {
         const data = await CallAPI('file/info', { name: id_or_name, full: true });
@@ -135,6 +138,7 @@ function FileProvider({ children })
         data.data = atob(data.data || '', );
 
         file.set(data);
+        set_cursor(0);
     };
     const upload_file = async (name, bytes, mime = 'application/octet-stream') =>
     {
@@ -146,11 +150,33 @@ function FileProvider({ children })
 
         await set_current_file(data.id);
     };
+    const set_cursor = (pos, len = 1) =>
+    {
+        if (pos === cursor_pos.value && len === cursor_len.value)
+            return;
+
+        pos = Math.max(0, pos || 0);
+        len = Math.max(1, len || 1);
+
+        if (file.value && pos + len > file.value.data.length)
+        {
+            if (pos >= file.value.data.length)
+                pos = file.value.data.length - 1;
+            else
+                len = file.value.data.length - pos;
+        }
+
+        cursor_pos.set(pos);
+        cursor_len.set(len);
+    }
 
     return <FileContext.Provider value={{
         current_file: file,
         set_current_file,
-        upload_file
+        upload_file,
+        set_cursor,
+        offset: cursor_pos.value,
+        length: cursor_len.value,
     }}>
         {children}
     </FileContext.Provider>;
@@ -158,16 +184,12 @@ function FileProvider({ children })
 
 function CodeProvider({ children })
 {
-    const code = useVariable(INITIAL_CODE);
+    const code = useVariable(null);
     const parsed = useVariable(null);
     const error = useVariable(null);
 
     const set_code = async code_text =>
     {
-        code_text = code_text.trim();
-
-        console.log('#################### SET CODE', code_text);
-
         if (code_text === code.value)
             return;
 
@@ -182,14 +204,17 @@ function CodeProvider({ children })
         }
         else
         {
-            parsed.set(null);
-            error.set(data.error || {
+            const error_data = data.error || {
                 'type': '(unknown)',
                 'message': 'An unknown error occurred while parsing the code.',
                 'line': 0,
                 'column': 0,
                 'text': null,
-            });
+            };
+
+            error_data.length = (error_data.text || '').length;
+            parsed.set(null);
+            error.set(error_data);
         }
     }
 
@@ -205,8 +230,7 @@ function CodeProvider({ children })
 
 function BinaryViewer()
 {
-    const { current_file } = React.useContext(FileContext);
-    const offset = useVariable(0);
+    const { current_file, offset, set_cursor } = React.useContext(FileContext);
     const inspected = useVariable(null);
 
     React.useEffect(() =>
@@ -215,11 +239,11 @@ function BinaryViewer()
             if (current_file.value && current_file.value.id)
                 inspected.set(await CallAPI('file/inspect', {
                     name: current_file.value.id,
-                    offset: offset.value,
+                    offset: offset,
                     length: 16,
                 }));
         })();
-    }, [current_file.value, offset.value]);
+    }, [current_file.value, offset]);
 
 
     if (!current_file.value || !current_file.value.data)
@@ -228,8 +252,8 @@ function BinaryViewer()
     const data = current_file.value.data;
     const chunk_size = 16;
     const chunks = chunk_into(data, chunk_size);
-    const active_row = Math.floor(offset.value / chunk_size);
-    const active_col = offset.value % chunk_size;
+    const active_row = Math.floor(offset / chunk_size);
+    const active_col = offset % chunk_size;
 
     function viewer_tb(label, val, readonly = true, change_handler = null)
     {
@@ -281,7 +305,7 @@ function BinaryViewer()
                                     return <td key={col}
                                                active={active_col == col ? '' : null}
                                                selected={active_col == col && active_row == row ? '' : null}
-                                               onClick={() => offset.set(row * chunk_size + col)}>
+                                               onClick={() => set_cursor(row * chunk_size + col)}>
                                         {hex(byte, 2)}
                                     </td>;
                             })}
@@ -295,7 +319,7 @@ function BinaryViewer()
                                     return <td key={col}
                                                active={active_col == col ? '' : null}
                                                selected={active_col == col && active_row == row ? '' : null}
-                                               onClick={() => offset.set(row * chunk_size + col)}>
+                                               onClick={() => set_cursor(row * chunk_size + col)}>
                                         {ascii8(byte)}
                                     </td>;
                             })}
@@ -319,7 +343,7 @@ function BinaryViewer()
                 <tbody>
                     <tr>
                         <th>Offset:</th>
-                        <td><input type="text" name="start" value={hex(offset.value, 8)} onChange={e =>
+                        <td><input type="text" name="start" value={hex(offset, 8)} onChange={e =>
                         {
                             // TODO
                         }}/></td>
@@ -391,32 +415,92 @@ function BinaryViewer()
     </binary-viewer>;
 }
 
+function CodeEditorExtensions(editor)
+{
+    // React.useLayoutEffect(() =>
+    // {
+    //     return editor.on("selectionChange", selection =>
+    //     {
+    //         console.log("EDITOR > EXTENSIONS > selectionChange", selection);
+    //     });
+    // }, []);
+    React.useEffect(() =>
+    {
+        editor.textarea.focus();
+    }, []);
+    const { error } = React.useContext(CodeContext);
+    let line = 0, column = 0, length = 0;
+
+    if (error.value && error.value.type == 'ParseException')
+    {
+        line = error.value.line || 0;
+        column = error.value.column || 0;
+        length = error.value.length || 0;
+    }
+
+    return <>
+        <error-indicator style={{
+            top: `${(line - 1)}lh`,
+            left: `${(column - 1)}ch`,
+            width: `${length - column + 1}ch`,
+            display: error.value ? 'block' : 'none',
+        }}/>
+        <BasicSetup editor={editor}/>
+    </>;
+}
+
 function CodeEditor()
 {
     const { code, set_code } = React.useContext(CodeContext);
+    const ready = useVariable(false);
 
-    return <Editor language="cpp"
-                   tabSize={4}
-                   insertSpaces={true}
-                   value={INITIAL_CODE}
-                   onChange={set_code}
-                   onUpdate={(value, editor) => set_code(value)}>
-        {editor => <BasicSetup editor={editor} />}
-    </Editor>
+    React.useEffect(() =>
+    {
+        (async () =>
+        {
+            const response = await CallAPI('code/syntax', { });
+
+            languages.cpp.keyword = new RegExp(response.keywords);
+            languages.cpp.comment.pattern = new RegExp(response.comments);
+            languages.cpp.char = undefined;
+            languages.cpp.string = undefined;
+            languages.cpp.module = undefined;
+            languages.cpp.macro = undefined;
+            languages.cpp.function = undefined;
+            languages.cpp.constant = undefined;
+            languages.cpp['raw-string'] = undefined;
+            languages.cpp['double-colon'] = undefined;
+            languages.cpp['generic-function'] = undefined;
+
+            ready.set(true);
+            console.log(languages.cpp);
+        })();
+    }, []);
+
+    if (!ready.value)
+        return <div className="loading">Loading code editor...</div>;
+    else
+        return <Editor language="cpp"
+                       tabSize={4}
+                       insertSpaces={true}
+                       value={INITIAL_CODE}
+                       onChange={set_code}
+                       onUpdate={(value, editor) => set_code(value)}
+                       children={CodeEditorExtensions}/>;
 }
 
 function CodeErrorWindow()
 {
     const { error } = React.useContext(CodeContext);
 
-    return <code-error-window>
-        <$ error={error.value}/>
-    </code-error-window>;
+    return <pythia-error-status status={error.value ? 'error' : 'ok'}>
+        {error.value ? error.value.message : 'No errors found.'}
+    </pythia-error-status>;
 }
 
 function OutputWindow()
 {
-    const { parsed } = React.useContext(CodeContext);
+    const { parsed, error } = React.useContext(CodeContext);
     const { current_file } = React.useContext(FileContext);
     const interpreted = useVariable(null);
 
@@ -431,28 +515,107 @@ function OutputWindow()
                     offset: 0,
                 });
 
+                if (!data.success && !error.value)
+                    error.set({
+                        type: data.error.type || 'InterpretationError',
+                        message: data.error.message || 'An error occurred while interpreting the binary file.',
+                        line: 0,
+                        text: 0,
+                        column: 0,
+                        length: 0,
+                    });
+
                 interpreted.set(data);
             })();
     }, [parsed.value, (current_file.value || { id: null }).id]);
 
-    function RenderElement({ element })
-    {
-        return <parsed-item>
-            <span>{element.name} : {element.repr}</span>
-            {element.members.map((m, i) => <RenderElement element={m} key={i}/>)}
-        </parsed-item>;
-    }
-
     return <output-window>
-        
-        {interpreted.value && interpreted.value.success ? <RenderElement element={interpreted.value.data}/> : null}
-
-
+        <OutputStructure structure={interpreted.value}/>
         <br/>
         <hr/>
         <br/>
         {<$ interpreted={interpreted.value} parsed={parsed.value}/>}
     </output-window>;
+}
+
+function OutputStructure({ structure })
+{
+    const { set_cursor } = React.useContext(FileContext);
+    const max_name_width = useVariable(0);
+    const max_repr_width = useVariable(0);
+
+    function RenderElement({ element, level = 0 })
+    {
+        const collapsed = useVariable(false);
+        const children = element.members || [];
+        const name = '\xa0'.repeat(level * 4) + element.name;
+        const repr = element.repr || '';
+
+        if (max_name_width.value < name.length)
+            max_name_width.set(name.length);
+
+        if (max_repr_width.value < repr.length)
+            max_repr_width.set(repr.length);
+
+        if (!element)
+            return <tr>
+                <td/>
+                <td colSpan="4">Invalid element</td>
+            </tr>;
+        else
+            return <>
+                <tr className="output-element">
+                    <th>
+                        <element-name displayname={name}
+                                      indent={level}
+                                      state={children.length ? collapsed.value ? 'closed' : 'open': 'none'}
+                                      onClick={() => collapsed.set(!collapsed.value)}/>
+                    </th>
+                    <td>{repr}</td>
+                    <td>
+                        <a onClick={() => set_cursor(element.offset, element.size)}>
+                            0x{hex(element.offset, 8)}
+                        </a>
+                    </td>
+                    <td>0x{hex(element.size, 4)}</td>
+                    <td>
+                        {[...atob(element.raw)].slice(0, 16).map((byte, i) =>
+                            <>
+                                <a key={i} onClick={() => set_cursor(element.offset + i)}>
+                                    {hex(byte)}
+                                </a>
+                                &nbsp;
+                            </>
+                        )}
+                        {element.size > 16 ? "..." : null}
+                    </td>
+                </tr>
+                {collapsed.value ? null : element.members.map((m, i) =>
+                    <RenderElement element={m}
+                                   key={i}
+                                   level={level + 1}/>
+                )}
+            </>;
+    }
+
+    return <table className="output-structure">
+        <thead>
+            <tr>
+                <th>
+                    <element-name displayname={'\xa0'.repeat(max_name_width.value)} state="none"/>
+                </th>
+                <th>
+                    {'\xa0'.repeat(max_repr_width.value)}
+                </th>
+                <th>Offset</th>
+                <th>Size</th>
+                <th>Bytes</th>
+            </tr>
+        </thead>
+        <tbody>
+            {structure && structure.data && <RenderElement element={structure.data}/>}
+        </tbody>
+    </table>;
 }
 
 function MainPage()
