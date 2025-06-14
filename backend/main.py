@@ -252,3 +252,10 @@ async def code_parse(request : Request) -> Response:
         }
 
     return success(response)
+
+@app.post(f'{BASE_URL}/code/syntax')
+async def code_syntax() -> Response:
+    return success({
+        'keywords': f'\\b({LayoutParser.BULTIIN_TYPES}|struct|union)\\b',
+        'comments': r'(#(?:[^#\n]|#\n?)*|//(?:[^\\\n]|\\\n?)*|/\*[^]*?(?:\*/|$))',
+    })

@@ -68,6 +68,9 @@ from common import toint, unix_to_ISO
 
 
 class LayoutParser():
+    BULTIIN_TYPES : str = r'((u?int|float|bool)(16|32|64|128)|bool(8|ean)?|u?int8|byte|uuid|ipv?[46]|time32|(c[uw]?|[uw]c?)?str|c?str16|char(8|16|32)?|[uw]?char)'
+
+
     def __init__(self : 'LayoutParser') -> None:
         number = pp.Regex(r'-?(\d+|0b[01]+|0x[0-9a-fA-F]+)')
 
@@ -87,7 +90,7 @@ class LayoutParser():
 
         keyword_struct = pp.Keyword('struct')
         keyword_union = pp.Keyword('union')
-        keyword_builtin = pp.Regex(r'((u?int|float|bool)(16|32|64|128)|bool(8|ean)?|u?int8|byte|uuid|time32|(c[uw]?|[uw]c?)?str|c?str16|char(8|16|32)?|[uw]?char)')
+        keyword_builtin = pp.Regex(LayoutParser.BULTIIN_TYPES)
 
         token_identifier = pp.Word(pp.alphas + '_', pp.alphanums + '_')
 
@@ -234,7 +237,7 @@ class LayoutParser():
                     '$raw': item.dump()
                 }
 
-        return type_converter(raw[0])
+        return type_converter(raw[0]) # type: ignore
 
 
 class Endianness(Enum):
@@ -410,11 +413,11 @@ class LayoutInterpreter():
         elif typename == 'uuid':
             raw = raw[:16]
             data = uuid.UUID(bytes = raw)
-        elif typename == 'ipv4':
+        elif typename == 'ipv4' or typename == 'ip4':
             raw = raw[:4]
             data = ipaddress.ip_address(raw)
             repr = f'{raw[0]}.{raw[1]}.{raw[2]}.{raw[3]}'
-        elif typename == 'ipv6':
+        elif typename == 'ipv6' or typename == 'ip6':
             raw = raw[:16]
             data = ipaddress.ip_address(raw)
             repr = f'[{data.compressed}]'
@@ -556,3 +559,5 @@ class LayoutInterpreter():
             raise ValueError(f'Unknown layout type: {_type}')
 
 
+# TODO : array of structs/unions
+# TODO : return which token/node/memeber and offset was interpreted when an error occurs
