@@ -1,5 +1,31 @@
+from typing import Any, NoReturn
 from datetime import datetime, timezone
+import functools
+import signal
+import sys
 
+
+def timeout(seconds : int = 5, default : Any | None = None):
+    if sys.platform == "win32":
+        raise NotImplementedError("Timeout decorator is not supported on Windows due to limitations with signal handling.")
+    else:
+        def decorator(func):
+            @functools.wraps(func)
+            def wrapper(*args, **kwargs) -> Any:
+                def handle_timeout(signum, frame) -> NoReturn:
+                    raise TimeoutError()
+
+                signal.signal(signal.SIGALRM, handle_timeout)
+                signal.alarm(seconds)
+                signal.SIGABRT
+
+                result = func(*args, **kwargs)
+
+                signal.alarm(0)
+
+                return result
+            return wrapper
+        return decorator
 
 def uncomplement(value : int, bitwidth : int) -> int:
     if value & (1 << (bitwidth - 1)):
