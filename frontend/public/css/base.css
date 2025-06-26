@@ -164,6 +164,27 @@ separator[h="2"] {
     grid-column: 2 / -1;
 }
 
+select {
+    padding: .3ch 1ch;
+}
+
+pythia-options {
+    border-bottom: 1px solid currentcolor;
+    background-color: #25252640;
+    flex-direction: row;
+    display: flex;
+    padding: .75rem;
+    width: 100%;
+    gap: 2ch;
+}
+
+pythia-options separator {
+    background-color: currentColor;
+    height: calc(100% + 1.5rem);
+    width: 1px;
+    margin: -.75rem 1ch;
+}
+
 pythia-input {
     grid-column: 1;
     grid-row: 1 / -1;
@@ -191,7 +212,7 @@ pythia-output {
 binary-viewer {
     flex-direction: column;
     max-height: 100%;
-    max-width: 810px;
+    max-width: 910px;
     display: flex;
     height: 100%;
 }
@@ -216,7 +237,7 @@ binary-data td {
     word-break: keep-all;
     text-wrap: nowrap;
     text-align: left;
-    padding: .2ch .5ch;
+    padding: .3ch .5ch;
     cursor: default;
 }
 
@@ -236,6 +257,7 @@ binary-data table thead {
 
 binary-data table thead th {
     padding-bottom: 1ch;
+    padding-top: 1ch;
 }
 
 binary-data table tr th:first-child {
