@@ -123,6 +123,7 @@ struct TEST
 `;
 const FileContext = React.createContext(null);
 const CodeContext = React.createContext(null);
+const SettingsContext = React.createContext(null);
 
 
 function FileProvider({ children })
@@ -186,7 +187,7 @@ function CodeProvider({ children })
 {
     const code = useVariable(null);
     const parsed = useVariable(null);
-    const error = useVariable(null);
+    const error_list = useVariable(null);
 
     const set_code = async code_text =>
     {
@@ -200,7 +201,7 @@ function CodeProvider({ children })
         if (data.success)
         {
             parsed.set(data.parsed);
-            error.set(null);
+            error_list.set(null);
         }
         else
         {
@@ -214,24 +215,64 @@ function CodeProvider({ children })
 
             error_data.length = (error_data.text || '').length;
             parsed.set(null);
-            error.set(error_data);
+            error_list.set([error_data]);
         }
     }
 
     return <CodeContext.Provider value={{
         code,
         parsed,
-        error,
+        error_list,
         set_code
     }}>
         {children}
     </CodeContext.Provider>;
 }
 
+function SettingsProvider({ children })
+{
+    const little_endian = useVariable(true);
+    const pointer_size = useVariable(8);
+
+    const set_endianness = value =>
+    {
+        value = value.toUpperCase();
+
+        const be = value === 'BE' || value === 'BIG';
+
+        little_endian.set(!be);
+    }
+    const set_pointer_size = value =>
+    {
+        value = +value;
+
+        if (value == 1 || value == 2 || value == 4 || value == 8)
+            pointer_size.set(value);
+        else
+            console.warn(`Invalid pointer size: ${value}. Must be one of 1, 2, 4, or 8.`);
+    }
+
+    return <SettingsContext.Provider value={{
+        little_endian: {
+            get: () => little_endian.value,
+            set: set_endianness,
+        },
+        pointer_size: {
+            get: () => pointer_size.value,
+            set: set_pointer_size,
+        },
+    }}>
+        {children}
+    </SettingsContext.Provider>;
+}
+
+
 function BinaryViewer()
 {
-    const { current_file, offset, set_cursor } = React.useContext(FileContext);
+    const { current_file, offset, length, set_cursor } = React.useContext(FileContext);
+    const { little_endian, pointer_size } = React.useContext(SettingsContext);
     const inspected = useVariable(null);
+    const ptr_size = pointer_size.get();
 
     React.useEffect(() =>
     {
@@ -240,11 +281,12 @@ function BinaryViewer()
                 inspected.set(await CallAPI('file/inspect', {
                     name: current_file.value.id,
                     offset: offset,
-                    length: 16,
+                    length: length,
+                    pointer_size: ptr_size,
+                    little_endian: little_endian.get(),
                 }));
         })();
     }, [current_file.value, offset]);
-
 
     if (!current_file.value || !current_file.value.data)
         return <div className="error">No file selected or file has no data.</div>;
@@ -279,7 +321,7 @@ function BinaryViewer()
             <table>
                 <thead>
                     <tr>
-                        <th>Offset</th>
+                        <th>Offset {'\xa0'.repeat(11)}</th>
                         <th spacer/>
                         {Array.from({ length: chunk_size }, (_, i) =>
                             <th key={i} active={active_col == i ? '' : null}>{hex(i, 2)}</th>
@@ -295,7 +337,7 @@ function BinaryViewer()
                     {chunks.map((chunk, row) =>
                     {
                         return <tr key={row} active={active_row == row ? '' : null}>
-                            <th>{hex(row * chunk_size, 8)}</th>
+                            <th>0x{hex(row * chunk_size, ptr_size * 2)}</th>
                             <th spacer/>
                             {chunk.map((byte, col) =>
                             {
@@ -305,7 +347,7 @@ function BinaryViewer()
                                     return <td key={col}
                                                active={active_col == col ? '' : null}
                                                selected={active_col == col && active_row == row ? '' : null}
-                                               onClick={() => set_cursor(row * chunk_size + col)}>
+                                               onClick={() => set_cursor(row * chunk_size + col,16)}>
                                         {hex(byte, 2)}
                                     </td>;
                             })}
@@ -319,7 +361,7 @@ function BinaryViewer()
                                     return <td key={col}
                                                active={active_col == col ? '' : null}
                                                selected={active_col == col && active_row == row ? '' : null}
-                                               onClick={() => set_cursor(row * chunk_size + col)}>
+                                               onClick={() => set_cursor(row * chunk_size + col,16)}>
                                         {ascii8(byte)}
                                     </td>;
                             })}
@@ -343,12 +385,20 @@ function BinaryViewer()
                 <tbody>
                     <tr>
                         <th>Offset:</th>
-                        <td><input type="text" name="start" value={hex(offset, 8)} onChange={e =>
-                        {
-                            // TODO
-                        }}/></td>
+                        <td colSpan="3">
+                            <input type="text" name="start" readOnly value={`0x${hex(offset, ptr_size * 2)}:0x${hex(offset + length, ptr_size * 2)}`}/>
+                        </td>
+                        {viewer_tb('Length', inspected.value.length, true)}
+                    </tr>
+                    <tr>
                         {viewer_tb('Value', inspected.value.value, true)}
-                        {viewer_tb('Binary', inspected.value.binary, true)}
+                        {viewer_tb('Base64', inspected.value.base64, true)}
+                    </tr>
+                    <tr>
+                        <th>Binary:</th>
+                        <td colSpan="5">
+                            <input type="text" readOnly value={inspected.value.binary}/>
+                        </td>
                     </tr>
                     <tr>
                         {viewer_tb('ASCII', inspected.value.ascii[0], true)}
@@ -386,27 +436,28 @@ function BinaryViewer()
                         {viewer_tb('float128', inspected.value.float128, true)}
                     </tr>
                     <tr>
+                        {viewer_tb('MAC', inspected.value.mac, true)}
                         {viewer_tb('IPv4', inspected.value.ipv4, true)}
+                        {viewer_tb('IPv4:P.', inspected.value.ipv4port, true)}
+                    </tr>
+                    <tr>
+                        <th/>
+                        <td/>
                         <th>IPv6:</th>
                         <td colSpan="3">
-                            <input type="text" name="dec" readOnly value={inspected.value.ipv6}/>
+                            <input type="text" readOnly value={inspected.value.ipv6}/>
                         </td>
                     </tr>
                     <tr>
                         {viewer_tb('time_32t', inspected.value.time32, true)}
-
                         <th>UUID:</th>
                         <td colSpan="3">
-                            <input type="text" name="dec" readOnly value={inspected.value.uuid}/>
+                            <input type="text" readOnly value={inspected.value.uuid}/>
                         </td>
                     </tr>
                     <tr>
-                        <th>x86-32:</th>
-                        <td colSpan="3"><input type="text" name="dec" readOnly/></td>
-                    </tr>
-                    <tr>
                         <th>x86-64:</th>
-                        <td colSpan="3"><input type="text" name="dec" readOnly/></td>
+                        <td colSpan="5"><input type="text" readOnly/></td>
                     </tr>
                 </tbody>
             </table>
@@ -428,14 +479,15 @@ function CodeEditorExtensions(editor)
     {
         editor.textarea.focus();
     }, []);
-    const { error } = React.useContext(CodeContext);
-    let line = 0, column = 0, length = 0;
+    const { error_list } = React.useContext(CodeContext);
+    const error = (error_list.value || []).length ? error_list.value[0] : null;
+    let line = -1, column = -1, length = 0;
 
-    if (error.value && error.value.type == 'ParseException')
+    if (error && error.type == 'ParseException')
     {
-        line = error.value.line || 0;
-        column = error.value.column || 0;
-        length = error.value.length || 0;
+        line = error.line || 0;
+        column = error.column || 0;
+        length = error.length || 0;
     }
 
     return <>
@@ -443,7 +495,7 @@ function CodeEditorExtensions(editor)
             top: `${(line - 1)}lh`,
             left: `${(column - 1)}ch`,
             width: `${length - column + 1}ch`,
-            display: error.value ? 'block' : 'none',
+            display: error_list.value ? 'block' : 'none',
         }}/>
         <BasicSetup editor={editor}/>
     </>;
@@ -491,18 +543,34 @@ function CodeEditor()
 
 function CodeErrorWindow()
 {
-    const { error } = React.useContext(CodeContext);
+    const { error_list } = React.useContext(CodeContext);
+    const errors = error_list.value || [];
 
-    return <pythia-error-status status={error.value ? 'error' : 'ok'}>
-        {error.value ? error.value.message : 'No errors found.'}
+    return <pythia-error-status status={errors.length ? 'error' : 'ok'}>
+        {errors.length ? <>
+            {errors.length} error(s) found:
+            <ul>
+                {errors.map((error, i) =>
+                    <li key={i}>
+                        <span className="error-type">{error.type}</span>:
+                        <span className="error-message">{error.message}</span>
+                        {error.line > 0 ? ` at line ${error.line}, column ${error.column}` : ''}
+                        {error.text ? ` in "${error.text}"` : ''}
+                    </li>
+                )}
+            </ul>
+        </> : 'No errors found'}
     </pythia-error-status>;
 }
 
 function OutputWindow()
 {
-    const { parsed, error } = React.useContext(CodeContext);
+    const { little_endian, pointer_size } = React.useContext(SettingsContext);
+    const { parsed, error_list } = React.useContext(CodeContext);
     const { current_file } = React.useContext(FileContext);
     const interpreted = useVariable(null);
+    const ptr_size = pointer_size.get();
+    const le = little_endian.get();
 
     React.useEffect(() =>
     {
@@ -513,21 +581,38 @@ function OutputWindow()
                     code: parsed.value,
                     name: current_file.value.id,
                     offset: 0,
+                    little_endian: le,
+                    pointer_size: ptr_size,
                 });
+                const errors = [];
 
-                if (!data.success && !error.value)
-                    error.set({
-                        type: data.error.type || 'InterpretationError',
-                        message: data.error.message || 'An error occurred while interpreting the binary file.',
-                        line: 0,
-                        text: 0,
-                        column: 0,
+                function collect_errors(data)
+                {
+                    data.errors.map(e => errors.push({
+                        message: e.message || 'An error occurred while interpreting the binary file.',
+                        type: e.type || 'InterpretationError',
+                        line: -1,
+                        text: data.path,
+                        column: -1,
                         length: 0,
-                    });
+                    }));
 
-                interpreted.set(data);
+                    if (data.members)
+                        data.members.map(m => collect_errors(m));
+                }
+
+                if (!data.success)
+                    collect_errors(data.data);
+
+                error_list.set(errors);
+                interpreted.set(data || {});
             })();
-    }, [parsed.value, (current_file.value || { id: null }).id]);
+    }, [
+        le,
+        ptr_size,
+        parsed.value,
+        (current_file.value || { id: null }).id
+    ]);
 
     return <output-window>
         <OutputStructure structure={interpreted.value}/>
@@ -538,24 +623,63 @@ function OutputWindow()
     </output-window>;
 }
 
-function OutputStructure({ structure })
+function process_structure(structure)
 {
-    const { set_cursor } = React.useContext(FileContext);
-    const max_name_width = useVariable(0);
-    const max_repr_width = useVariable(0);
+    let max_name_width = 0;
+    let max_repr_width = 0;
 
-    function RenderElement({ element, level = 0 })
+    function process_element(element, level = 0)
     {
-        const collapsed = useVariable(false);
+        if (!element)
+            return null;
+
         const children = element.members || [];
         const name = '\xa0'.repeat(level * 4) + element.name;
         const repr = element.repr || '';
 
-        if (max_name_width.value < name.length)
-            max_name_width.set(name.length);
+        if (max_name_width < name.length)
+            max_name_width = name.length;
 
-        if (max_repr_width.value < repr.length)
-            max_repr_width.set(repr.length);
+        if (max_repr_width < repr.length)
+            max_repr_width = repr.length;
+
+        return {
+            ...element,
+            bytes: element.raw ? [...atob(element.raw)] : [],
+            name: name,
+            repr: repr,
+            level: level,
+            members: children.map(m => process_element(m, level + 1)),
+        };
+    }
+
+    return {
+        data: process_element((structure && structure.data) || {}),
+        max_name_width: max_name_width,
+        max_repr_width: max_repr_width,
+    }
+}
+
+function OutputStructure({ structure })
+{
+    const { pointer_size } = React.useContext(SettingsContext);
+    const { set_cursor } = React.useContext(FileContext);
+    const collapsed = useVariable({ });
+    const ptr_size = pointer_size.get();
+    const chunk_size = 16;
+
+    structure = process_structure(structure);
+
+    function RenderElement({ element })
+    {
+        let _coll = collapsed.value[element.path];
+
+        if (_coll === undefined)
+            collapsed.set({ ...collapsed.value, [element.path]: false });
+
+        _coll = !!_coll;
+
+        console.log(collapsed.value, element.path, _coll);
 
         if (!element)
             return <tr>
@@ -566,20 +690,20 @@ function OutputStructure({ structure })
             return <>
                 <tr className="output-element">
                     <th>
-                        <element-name displayname={name}
-                                      indent={level}
-                                      state={children.length ? collapsed.value ? 'closed' : 'open': 'none'}
-                                      onClick={() => collapsed.set(!collapsed.value)}/>
+                        <element-name displayname={element.name}
+                                      indent={element.level}
+                                      state={element.members.length ? _coll ? 'closed' : 'open': 'none'}
+                                      onClick={() => collapsed.set(() => ({ ...collapsed.value, [element.path]: !_coll }))}/>
                     </th>
-                    <td>{repr}</td>
+                    <td>{element.repr}</td>
+                    <td>{element.size}</td>
                     <td>
                         <a onClick={() => set_cursor(element.offset, element.size)}>
-                            0x{hex(element.offset, 8)}
+                            0x{hex(element.offset, ptr_size * 2)}:0x{hex(element.offset + element.size, ptr_size * 2)}
                         </a>
                     </td>
-                    <td>0x{hex(element.size, 4)}</td>
                     <td>
-                        {[...atob(element.raw)].slice(0, 16).map((byte, i) =>
+                        {element.bytes.slice(0, chunk_size).map((byte, i) =>
                             <>
                                 <a key={i} onClick={() => set_cursor(element.offset + i)}>
                                     {hex(byte)}
@@ -587,13 +711,11 @@ function OutputStructure({ structure })
                                 &nbsp;
                             </>
                         )}
-                        {element.size > 16 ? "..." : null}
+                        {element.size > chunk_size ? "..." : null}
                     </td>
                 </tr>
-                {collapsed.value ? null : element.members.map((m, i) =>
-                    <RenderElement element={m}
-                                   key={i}
-                                   level={level + 1}/>
+                {_coll ? null : element.members.map((m, i) =>
+                    <RenderElement element={m} key={i}/>
                 )}
             </>;
     }
@@ -602,18 +724,18 @@ function OutputStructure({ structure })
         <thead>
             <tr>
                 <th>
-                    <element-name displayname={'\xa0'.repeat(max_name_width.value)} state="none"/>
+                    <element-name displayname={'\xa0'.repeat(structure.max_name_width)} state="none"/>
                 </th>
                 <th>
-                    {'\xa0'.repeat(max_repr_width.value)}
+                    {'\xa0'.repeat(structure.max_repr_width)}
                 </th>
-                <th>Offset</th>
                 <th>Size</th>
+                <th>Offset</th>
                 <th>Bytes</th>
             </tr>
         </thead>
         <tbody>
-            {structure && structure.data && <RenderElement element={structure.data}/>}
+            <RenderElement element={structure.data}/>
         </tbody>
     </table>;
 }
@@ -621,6 +743,7 @@ function OutputStructure({ structure })
 function MainPage()
 {
     const { current_file, set_current_file, upload_file } = React.useContext(FileContext);
+    const { little_endian, pointer_size } = React.useContext(SettingsContext);
 
     React.useEffect(() =>
     {
@@ -628,15 +751,30 @@ function MainPage()
             set_current_file('test');
     }, [current_file.value]);
 
-
-    const bytes = new Uint8Array(2048);
-    crypto.getRandomValues(bytes);
-
-
     return <>
         <header>
             <h1>Pythia &mdash; A binary data reverse engineering application</h1>
         </header>
+        <pythia-options>
+            <input type="file"/>
+            <separator/>
+            Endianess:
+            <select defaultValue={little_endian.get() ? 'LE' : 'BE'}
+                    onChange={e => little_endian.set(e.target.value)}>
+                <option value="LE">Little Endian</option>
+                <option value="BE">Big Endian</option>
+            </select>
+            <separator/>
+            Pointer/Address Size:
+            <select defaultValue={`x${pointer_size.get()}`}
+                    onChange={e => pointer_size.set(+e.target.value.slice(1) >> 3)}>
+                <option value="x8">8 Bit (1 Byte)</option>
+                <option value="x16">16 Bit (2 Bytes)</option>
+                <option value="x32">32 Bit (4 Bytes)</option>
+                <option value="x64">64 Bit (8 Bytes)</option>
+            </select>
+            <separator/>
+        </pythia-options>
         <main>
             <pythia-input>
                 <BinaryViewer/>
@@ -658,10 +796,12 @@ function MainPage()
     </>;
 }
 
-export const MainPageWrapper = () => <FileProvider>
-                                        <CodeProvider>
-                                            <MainPage/>
-                                        </CodeProvider>
-                                     </FileProvider>;
+export const MainPageWrapper = () => <SettingsProvider>
+                                        <FileProvider>
+                                            <CodeProvider>
+                                                <MainPage/>
+                                            </CodeProvider>
+                                        </FileProvider>
+                                    </SettingsProvider>;
 
 const $ = element => <pre><code>{JSON.stringify(element, null, 4)}</code></pre> 

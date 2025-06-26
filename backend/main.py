@@ -8,7 +8,7 @@ from fastapi.responses import RedirectResponse
 
 import pyparsing as pp
 
-from parser import LayoutParser, LayoutInterpreter, InterpretedLayout, Endianness
+from parser import LayoutParser, LayoutInterpreter, GlobalInterpreterResult, Endianness
 from files import PythiaFileInfo, PythiaFiles
 
 
@@ -24,7 +24,10 @@ files = PythiaFiles()
 
 
 # only for testing purposes
-files.create('test', b'\x14This is a test file.\0\0\0\x2a\0\0\0\0\0\0\0\x15')
+files.create('test', '\x14This is a test file.\0\0\0\x2a\0\0\0\0\0\0\0\x15Zusätzlicher Text ⚠️❤️'.encode('utf-8'))
+
+# with open('/usr/local/lib/libpython3.so', 'rb') as f:
+#     files.create('test', f.read())
 
 
 def success(data : Any | None = None) -> Response:
@@ -139,6 +142,9 @@ async def file_inspect(request : Request) -> Response:
     name: str | None = reqjson.get('name', None)
     offset: int = int(reqjson.get('offset', -1))
     length: int = int(reqjson.get('length', 16))
+    little_endian: bool = bool(reqjson.get('little_endian', True))
+    pointer_size: int = int(reqjson.get('pointer_size', 8))
+    interpreter = LayoutInterpreter({}, Endianness.LITTLE if little_endian else Endianness.BIG, pointer_size)
 
     if not name or offset < 0 or length <= 0:
         return Response(None, 400)
@@ -155,70 +161,67 @@ async def file_inspect(request : Request) -> Response:
     if len(content) < 16:
         content += b'\x00' * (16 - len(content))
 
-    return success({
+    def interpret(type: str) -> str:
+        return interpreter.interpret_data(content, type)[0]
+
+    result: dict[str, Any] = {
         'name': name,
         'offset': offset,
         'length': length,
-        'value': content[0:1].hex(),
-        'binary': f'{content[0]:08b}',
+        'value': f'0x{content[0]:02x}',
+        'binary': ' '.join(f'{b:08b}' for b in content[0:length]),
+        'base64': base64.b64encode(content).decode('utf-8'),
         'ascii': content.decode('ascii', 'ignore'),
         'utf8': content.decode('utf-8', 'ignore'),
         'utf16': content.decode('utf-16', 'ignore'),
         'utf32': content.decode('utf-32', 'ignore'),
-        'int8': LayoutInterpreter.interpret_data(content, 'int8')[0],
-        'uint8': LayoutInterpreter.interpret_data(content, 'uint8')[0],
-        'int16': LayoutInterpreter.interpret_data(content, 'int16')[0],
-        'uint16': LayoutInterpreter.interpret_data(content, 'uint16')[0],
-        'int32': LayoutInterpreter.interpret_data(content, 'int32')[0],
-        'uint32': LayoutInterpreter.interpret_data(content, 'uint32')[0],
-        'int64': LayoutInterpreter.interpret_data(content, 'int64')[0],
-        'uint64': LayoutInterpreter.interpret_data(content, 'uint64')[0],
-        'int128': LayoutInterpreter.interpret_data(content, 'int128')[0],
-        'uint128': LayoutInterpreter.interpret_data(content, 'uint128')[0],
-        'time32': LayoutInterpreter.interpret_data(content, 'time32')[0],
-        'float16': LayoutInterpreter.interpret_data(content, 'float16')[0],
-        'float32': LayoutInterpreter.interpret_data(content, 'float32')[0],
-        'float64': LayoutInterpreter.interpret_data(content, 'float64')[0],
-        'float128': LayoutInterpreter.interpret_data(content, 'float128')[0],
-        'uuid': LayoutInterpreter.interpret_data(content, 'uuid')[0],
-        'ipv4': LayoutInterpreter.interpret_data(content, 'ipv4')[0],
-        'ipv6': LayoutInterpreter.interpret_data(content, 'ipv6')[0],
-        'x86_32': None,  # TODO
-        'x86_64': None,  # TODO
-    })
+        'int8': interpret('int8'),
+        'uint8': interpret('uint8'),
+        'int16': interpret('int16'),
+        'uint16': interpret('uint16'),
+        'int32': interpret('int32'),
+        'uint32': interpret('uint32'),
+        'int64': interpret('int64'),
+        'uint64': interpret('uint64'),
+        'int128': interpret('int128'),
+        'uint128': interpret('uint128'),
+        'time32': interpret('time32'),
+        'float16': interpret('float16'),
+        'float32': interpret('float32'),
+        'float64': interpret('float64'),
+        'float128': interpret('float128'),
+        'uuid': interpret('uuid'),
+        'ipv4': interpret('ipv4'),
+        'ipv6': interpret('ipv6'),
+        'mac': interpret('mac'),
+        'x86': None, # TODO
+    }
+
+    if len(content) >= 6:
+        result['ipv4port'] = f'{interpret('ipv4')}:{interpreter.interpret_data(content[4:], 'uint16')[0].replace("'", "")}'
+    else:
+        result['ipv4port'] = f'{result['ipv4']}:0'
+
+    return success(result)
 
 @app.post(f'{BASE_URL}/file/interpret')
 async def file_parse(request : Request) -> Response:
     reqjson: dict[str, Any] = await request.json()
-    name: str | None = reqjson.get('name', None)
     code: dict[str, Any] | None = reqjson.get('code', None)
+    name: str = reqjson.get('name', '')
+    little_endian: bool = bool(reqjson.get('little_endian', True))
+    pointer_size: int = int(reqjson.get('pointer_size', 8))
 
     if not name or not code:
         return Response(None, 400)
 
-    file: PythiaFileInfo | None = files[name]
-
-    if file is None:
+    if (file := files[name]) is None:
         return Response(None, 404)
+    else:
+        interpreter = LayoutInterpreter(code, Endianness.LITTLE if little_endian else Endianness.BIG, pointer_size)
+        result: GlobalInterpreterResult = interpreter(file.data)
 
-    try:
-        interpreter = LayoutInterpreter(code, Endianness.LITTLE)
-        result: InterpretedLayout = interpreter(file.data)
-
-        return success({
-            'success': True,
-            'error': None,
-            'data': result.to_dict(),
-        })
-    except Exception as e:
-        return success({
-            'success': False,
-            'error': {
-                'type': str(type(e)),
-                'message': str(e),
-            },
-            'data': None,
-        })
+        return success(result.to_dict())
 
 @app.post(f'{BASE_URL}/code/parse')
 async def code_parse(request : Request) -> Response:
