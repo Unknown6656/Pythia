@@ -110,10 +110,15 @@ async function CallAPI(url, data)
 
 const INITIAL_CODE = `// example code for Pythia
 
-struct TEST
+struct uint8_prefixed_string
 {
     length : uint8;
     text : char[length];
+};
+
+struct TEST
+{
+    // text : uint8_prefixed_string;
     composite : struct
     {
         value : int32;
@@ -266,13 +271,13 @@ function SettingsProvider({ children })
     </SettingsContext.Provider>;
 }
 
-
 function BinaryViewer()
 {
     const { current_file, offset, length, set_cursor } = React.useContext(FileContext);
     const { little_endian, pointer_size } = React.useContext(SettingsContext);
     const inspected = useVariable(null);
     const ptr_size = pointer_size.get();
+    const le = little_endian.get();
 
     React.useEffect(() =>
     {
@@ -283,10 +288,10 @@ function BinaryViewer()
                     offset: offset,
                     length: length,
                     pointer_size: ptr_size,
-                    little_endian: little_endian.get(),
+                    little_endian: le,
                 }));
         })();
-    }, [current_file.value, offset]);
+    }, [current_file.value, offset, ptr_size, le]);
 
     if (!current_file.value || !current_file.value.data)
         return <div className="error">No file selected or file has no data.</div>;
@@ -297,13 +302,13 @@ function BinaryViewer()
     const active_row = Math.floor(offset / chunk_size);
     const active_col = offset % chunk_size;
 
-    function viewer_tb(label, val, readonly = true, change_handler = null)
+    function viewer_tb(label, val, width = 1, readonly = true, change_handler = null)
     {
         val = val === null || val === undefined ? '' : String(val);
 
         return <>
             <th>{label}:</th>
-            <td>
+            <td colSpan={width}>
                 <input type="text"
                        name={label.toLowerCase().replace(/[^\w]/g, '_')}
                        readOnly={!!readonly || null}
@@ -341,13 +346,21 @@ function BinaryViewer()
                             <th spacer/>
                             {chunk.map((byte, col) =>
                             {
+                                const index = row * chunk_size + col;
+
                                 if (byte === null)
-                                    return <td key={col} empty=""/>;
+                                    return <td key={index} empty=""/>;
                                 else
-                                    return <td key={col}
+                                    return <td key={index}
                                                active={active_col == col ? '' : null}
                                                selected={active_col == col && active_row == row ? '' : null}
-                                               onClick={() => set_cursor(row * chunk_size + col,16)}>
+                                               inspected={index >= offset && index < offset + length ? '' : null}
+                                               onClick={() => set_cursor(index,16)}
+                                               onContextMenu={e =>
+                                               {
+                                                    e.preventDefault();
+                                                    set_cursor(index, 1);
+                                               }}>
                                         {hex(byte, 2)}
                                     </td>;
                             })}
@@ -355,13 +368,20 @@ function BinaryViewer()
                             <th spacer/>
                             {chunk.map((byte, col) =>
                             {
+                                const index = row * chunk_size + col;
+
                                 if (byte === null)
-                                    return <td key={col} empty=""/>;
+                                    return <td key={index} empty=""/>;
                                 else
-                                    return <td key={col}
+                                    return <td key={index}
                                                active={active_col == col ? '' : null}
                                                selected={active_col == col && active_row == row ? '' : null}
-                                               onClick={() => set_cursor(row * chunk_size + col,16)}>
+                                               onClick={() => set_cursor(index,16)}
+                                               onContextMenu={e =>
+                                               {
+                                                    e.preventDefault();
+                                                    set_cursor(index, 1);
+                                               }}>
                                         {ascii8(byte)}
                                     </td>;
                             })}
@@ -384,76 +404,64 @@ function BinaryViewer()
             <table>
                 <tbody>
                     <tr>
-                        <th>Offset:</th>
-                        <td colSpan="3">
-                            <input type="text" name="start" readOnly value={`0x${hex(offset, ptr_size * 2)}:0x${hex(offset + length, ptr_size * 2)}`}/>
-                        </td>
-                        {viewer_tb('Length', inspected.value.length, true)}
+                        {viewer_tb('Offset', `0x${hex(offset, ptr_size * 2)}:0x${hex(offset + length, ptr_size * 2)}`, 3)}
+                        {viewer_tb('Length', inspected.value.length)}
                     </tr>
                     <tr>
-                        {viewer_tb('Value', inspected.value.value, true)}
-                        {viewer_tb('Base64', inspected.value.base64, true)}
+                        {viewer_tb('Value', inspected.value.hex, 3)}
+                        {viewer_tb('Base64', inspected.value.base64)}
                     </tr>
                     <tr>
-                        <th>Binary:</th>
-                        <td colSpan="5">
-                            <input type="text" readOnly value={inspected.value.binary}/>
-                        </td>
+                        {viewer_tb('Binary', inspected.value.binary, 5)}
                     </tr>
                     <tr>
-                        {viewer_tb('ASCII', inspected.value.ascii[0], true)}
-                        {viewer_tb('UTF-8', inspected.value.utf8[0], true)}
-                        {viewer_tb('UTF-16', inspected.value.utf16[0], true)}
+                        {viewer_tb('ASCII', inspected.value.ascii[0])}
+                        {viewer_tb('UTF-8', inspected.value.utf8[0])}
+                        {viewer_tb('UTF-16', inspected.value.utf16[0])}
                     </tr>
                     <tr>
-                        {viewer_tb('int8', inspected.value.int8, true)}
+                        {viewer_tb('int8', inspected.value.int8)}
                         {/* todo: jump to address */}
-                        {viewer_tb('uint8', inspected.value.uint8, true)}
-                        {viewer_tb('bool8', !!inspected.value.uint8, true)}
+                        {viewer_tb('uint8', inspected.value.uint8)}
+                        {viewer_tb('bool8', !!inspected.value.uint8)}
                     </tr>
                     <tr>
-                        {viewer_tb('int16', inspected.value.int16, true)}
+                        {viewer_tb('int16', inspected.value.int16)}
                         {/* todo: jump to address */}
-                        {viewer_tb('uint16', inspected.value.uint16, true)}
-                        {viewer_tb('float16', inspected.value.float16, true)}
+                        {viewer_tb('uint16', inspected.value.uint16)}
+                        {viewer_tb('float16', inspected.value.float16)}
                     </tr>
                     <tr>
-                        {viewer_tb('int32', inspected.value.int32, true)}
+                        {viewer_tb('int32', inspected.value.int32)}
                         {/* todo: jump to address */}
-                        {viewer_tb('uint32', inspected.value.uint32, true)}
-                        {viewer_tb('float32', inspected.value.float32, true)}
+                        {viewer_tb('uint32', inspected.value.uint32)}
+                        {viewer_tb('float32', inspected.value.float32)}
                     </tr>
                     <tr>
-                        {viewer_tb('int64', inspected.value.int64, true)}
+                        {viewer_tb('int64', inspected.value.int64)}
                         {/* todo: jump to address */}
-                        {viewer_tb('uint64', inspected.value.uint64, true)}
-                        {viewer_tb('float64', inspected.value.float64, true)}
+                        {viewer_tb('uint64', inspected.value.uint64)}
+                        {viewer_tb('float64', inspected.value.float64)}
                     </tr>
                     <tr>
-                        {viewer_tb('int128', inspected.value.int128, true)}
+                        {viewer_tb('int128', inspected.value.int128)}
                         {/* todo: jump to address */}
-                        {viewer_tb('uint128', inspected.value.uint128, true)}
-                        {viewer_tb('float128', inspected.value.float128, true)}
+                        {viewer_tb('uint128', inspected.value.uint128)}
+                        {viewer_tb('float128', inspected.value.float128)}
                     </tr>
                     <tr>
-                        {viewer_tb('MAC', inspected.value.mac, true)}
-                        {viewer_tb('IPv4', inspected.value.ipv4, true)}
-                        {viewer_tb('IPv4:P.', inspected.value.ipv4port, true)}
+                        {viewer_tb('MAC', inspected.value.mac)}
+                        {viewer_tb('IPv4', inspected.value.ipv4)}
+                        {viewer_tb('IPv4:P.', inspected.value.ipv4port)}
                     </tr>
                     <tr>
                         <th/>
                         <td/>
-                        <th>IPv6:</th>
-                        <td colSpan="3">
-                            <input type="text" readOnly value={inspected.value.ipv6}/>
-                        </td>
+                        {viewer_tb('IPv6', inspected.value.ipv6, 3)}
                     </tr>
                     <tr>
                         {viewer_tb('time_32t', inspected.value.time32, true)}
-                        <th>UUID:</th>
-                        <td colSpan="3">
-                            <input type="text" readOnly value={inspected.value.uuid}/>
-                        </td>
+                        {viewer_tb('UUID', inspected.value.uuid, 3)}
                     </tr>
                     <tr>
                         <th>x86-64:</th>
@@ -586,9 +594,8 @@ function OutputWindow()
                 });
                 const errors = [];
 
-                function collect_errors(data)
-                {
-                    data.errors.map(e => errors.push({
+                if (!data.success)
+                    (data.errors || []).map(e => errors.push({
                         message: e.message || 'An error occurred while interpreting the binary file.',
                         type: e.type || 'InterpretationError',
                         line: -1,
@@ -597,15 +604,8 @@ function OutputWindow()
                         length: 0,
                     }));
 
-                    if (data.members)
-                        data.members.map(m => collect_errors(m));
-                }
-
-                if (!data.success)
-                    collect_errors(data.data);
-
                 error_list.set(errors);
-                interpreted.set(data || {});
+                interpreted.set(data.data || []);
             })();
     }, [
         le,
@@ -628,7 +628,7 @@ function process_structure(structure)
     let max_name_width = 0;
     let max_repr_width = 0;
 
-    function process_element(element, level = 0)
+    function process_element(element, level)
     {
         if (!element)
             return null;
@@ -654,7 +654,7 @@ function process_structure(structure)
     }
 
     return {
-        data: process_element((structure && structure.data) || {}),
+        data: (structure || []).map(e => process_element(e, 0)),
         max_name_width: max_name_width,
         max_repr_width: max_repr_width,
     }
@@ -662,16 +662,17 @@ function process_structure(structure)
 
 function OutputStructure({ structure })
 {
+    structure = process_structure(structure);
+
     const { pointer_size } = React.useContext(SettingsContext);
     const { set_cursor } = React.useContext(FileContext);
     const collapsed = useVariable({ });
     const ptr_size = pointer_size.get();
     const chunk_size = 16;
 
-    structure = process_structure(structure);
-
     function RenderElement({ element })
     {
+        const skipped = element.skip || false;
         let _coll = collapsed.value[element.path];
 
         if (_coll === undefined)
@@ -679,16 +680,14 @@ function OutputStructure({ structure })
 
         _coll = !!_coll;
 
-        console.log(collapsed.value, element.path, _coll);
-
         if (!element)
-            return <tr>
+            return <tr skipped={skipped ? '' : null}>
                 <td/>
                 <td colSpan="4">Invalid element</td>
             </tr>;
         else
             return <>
-                <tr className="output-element">
+                <tr className="output-element" skipped={skipped ? '' : null}>
                     <th>
                         <element-name displayname={element.name}
                                       indent={element.level}
@@ -735,7 +734,9 @@ function OutputStructure({ structure })
             </tr>
         </thead>
         <tbody>
-            <RenderElement element={structure.data}/>
+            {structure.data.map((element, i) =>
+                <RenderElement element={element} key={i}/>
+            )}
         </tbody>
     </table>;
 }

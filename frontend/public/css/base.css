@@ -233,6 +233,7 @@ binary-data table {
 
 binary-data th,
 binary-data td {
+    border-bottom: 3px solid transparent;
     vertical-align: middle;
     word-break: keep-all;
     text-wrap: nowrap;
@@ -297,6 +298,10 @@ binary-data table:has(th:hover) tr:not(:hover) {
 binary-data table th[empty],
 binary-data table td[empty] {
     pointer-events: none;
+}
+
+binary-data table td[inspected] {
+    border-bottom-color: white;
 }
 
 binary-data span.error {
@@ -401,6 +406,11 @@ output-window table.output-structure {
 
 output-window table.output-structure tr {
     font-family: var(--font-code);
+}
+
+output-window table.output-structure tr[skipped] {
+    font-style: italic;
+    opacity: .5;
 }
 
 output-window table.output-structure thead {
