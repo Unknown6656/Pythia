@@ -4,7 +4,7 @@ import re
 
 
 pattern = re.compile(r'\$\{\s*(?P<var>\w+)(\s*:-?(?P<def>[^\}]+))?\s*\}')
-input : str = ''
+input: str = ''
 
 if len(sys.argv) < 2:
     input = sys.stdin.read()
@@ -13,8 +13,8 @@ else:
         input = file.read()
 
 def replace_variable(match) -> str:
-    var_name : str = match.group('var')
-    default_value : str | None = match.group('def')
+    var_name: str = match.group('var')
+    default_value: str | None = match.group('def')
 
     if var_name in os.environ:
         return os.environ[var_name]

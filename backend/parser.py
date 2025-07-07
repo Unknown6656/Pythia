@@ -335,7 +335,7 @@ class InterpreterContext:
 
 
 class GlobalInterpreterResult:
-    def __init__(self : 'GlobalInterpreterResult', result : InterpretedLayout) -> None:
+    def __init__(self: 'GlobalInterpreterResult', result: list[InterpretedLayout]) -> None:
         self.errors: list[InterpreterError] = []
         self.data: InterpretedLayout = result
 

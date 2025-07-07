@@ -30,7 +30,7 @@ files.create('test', '\x14This is a test file.\0\0\0\x2a\0\0\0\0\0\0\0\x15Zusät
 #     files.create('test', f.read())
 
 
-def success(data : Any | None = None) -> Response:
+def success(data: Any | None = None) -> Response:
     return Response(json.dumps(data), 200, media_type = 'application/json')
 
 
@@ -39,7 +39,7 @@ def root() -> Response:
     return RedirectResponse(f'{BASE_URL}/docs')
 
 @app.post(f'{BASE_URL}/file/upload')
-async def file_upload(request : Request) -> Response:
+async def file_upload(request: Request) -> Response:
     try:
         reqjson: dict[str, Any] = await request.json()
         name: str | None = reqjson.get('name', None)
@@ -60,7 +60,7 @@ async def file_upload(request : Request) -> Response:
         return Response(None, 400)
 
 @app.post(f'{BASE_URL}/file/upload/raw')
-async def file_upload_raw(request : Request) -> Response:
+async def file_upload_raw(request: Request) -> Response:
     data: bytes = await request.body()
     name = str(uuid.uuid4())
     files.create(
@@ -73,7 +73,7 @@ async def file_upload_raw(request : Request) -> Response:
     return file_info(request, name, False)
 
 @app.post(f'{BASE_URL}/file/delete')
-async def file_delete(request : Request) -> Response:
+async def file_delete(request: Request) -> Response:
     reqjson: dict[str, Any] = await request.json()
     name: str | None = reqjson.get('name', None)
 
@@ -86,7 +86,7 @@ async def file_delete(request : Request) -> Response:
         return Response(None, 204)
 
 @app.post(f'{BASE_URL}/file/info')
-async def file_info(request : Request) -> Response:
+async def file_info(request: Request) -> Response:
     reqjson: dict[str, Any] = await request.json()
     name: str | None = reqjson.get('name', None)
     full: bool = bool(reqjson.get('full', False))
@@ -99,7 +99,7 @@ async def file_info(request : Request) -> Response:
     if file is None:
         return Response(None, 404)
     else:
-        response : dict[str, Any] = {
+        response: dict[str, Any] = {
             'id': str(file.id),
             'name': file.name,
             'mime': file.mime,
@@ -115,7 +115,7 @@ async def file_info(request : Request) -> Response:
         return Response(json.dumps(response), 200, media_type = 'application/json')
 
 @app.post(f'{BASE_URL}/file/view')
-async def file_view(request : Request) -> Response:
+async def file_view(request: Request) -> Response:
     reqjson: dict[str, Any] = await request.json()
     name: str | None = reqjson.get('name', None)
 
@@ -137,7 +137,7 @@ async def file_view(request : Request) -> Response:
         )
 
 @app.post(f'{BASE_URL}/file/inspect')
-async def file_inspect(request : Request) -> Response:
+async def file_inspect(request: Request) -> Response:
     reqjson: dict[str, Any] = await request.json()
     name: str | None = reqjson.get('name', None)
     offset: int = int(reqjson.get('offset', -1))
@@ -205,7 +205,7 @@ async def file_inspect(request : Request) -> Response:
     return success(result)
 
 @app.post(f'{BASE_URL}/file/interpret')
-async def file_parse(request : Request) -> Response:
+async def file_parse(request: Request) -> Response:
     reqjson: dict[str, Any] = await request.json()
     code: dict[str, Any] | None = reqjson.get('code', None)
     name: str = reqjson.get('name', '')
@@ -224,7 +224,7 @@ async def file_parse(request : Request) -> Response:
         return success(result.to_dict())
 
 @app.post(f'{BASE_URL}/code/parse')
-async def code_parse(request : Request) -> Response:
+async def code_parse(request: Request) -> Response:
     response: dict[str, Any] = {
         'success': False,
         'error': None,
