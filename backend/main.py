@@ -142,9 +142,9 @@ async def file_inspect(request: Request) -> Response:
     name: str | None = reqjson.get('name', None)
     offset: int = int(reqjson.get('offset', -1))
     length: int = int(reqjson.get('length', 16))
-    little_endian: bool = bool(reqjson.get('little_endian', True))
+    endianness: Endianness = Endianness.LITTLE if bool(reqjson.get('little_endian', True)) else Endianness.BIG
     pointer_size: int = int(reqjson.get('pointer_size', 8))
-    interpreter = LayoutInterpreter({}, Endianness.LITTLE if little_endian else Endianness.BIG, pointer_size)
+    interpreter = LayoutInterpreter({}, endianness, pointer_size)
 
     if not name or offset < 0 or length <= 0:
         return Response(None, 400)
@@ -162,13 +162,14 @@ async def file_inspect(request: Request) -> Response:
         content += b'\x00' * (16 - len(content))
 
     def interpret(type: str) -> str:
-        return interpreter.interpret_data(content, type)[0]
+        return interpreter.interpret_data(content, type, endianness, pointer_size)[0]
 
     result: dict[str, Any] = {
         'name': name,
         'offset': offset,
         'length': length,
         'value': f'0x{content[0]:02x}',
+        'hex': ' '.join(f'{b:02x}' for b in content[0:length]),
         'binary': ' '.join(f'{b:08b}' for b in content[0:length]),
         'base64': base64.b64encode(content).decode('utf-8'),
         'ascii': content.decode('ascii', 'ignore'),
@@ -207,7 +208,7 @@ async def file_inspect(request: Request) -> Response:
 @app.post(f'{BASE_URL}/file/interpret')
 async def file_parse(request: Request) -> Response:
     reqjson: dict[str, Any] = await request.json()
-    code: dict[str, Any] | None = reqjson.get('code', None)
+    code: list[dict[str, Any]] = reqjson.get('code', [])
     name: str = reqjson.get('name', '')
     little_endian: bool = bool(reqjson.get('little_endian', True))
     pointer_size: int = int(reqjson.get('pointer_size', 8))
@@ -259,6 +260,6 @@ async def code_parse(request: Request) -> Response:
 @app.post(f'{BASE_URL}/code/syntax')
 async def code_syntax() -> Response:
     return success({
-        'keywords': f'\\b({LayoutParser.BULTIIN_TYPES}|struct|union)\\b',
+        'keywords': f'\\b({LayoutParser.BULTIIN_TYPES}|struct|union|skip|[lm]sb|[lb]e)\\b',
         'comments': r'(#(?:[^#\n]|#\n?)*|//(?:[^\\\n]|\\\n?)*|/\*[^]*?(?:\*/|$))',
     })

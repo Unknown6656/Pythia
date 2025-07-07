@@ -1,26 +1,61 @@
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
-import re
+
 import base64
 import uuid
-import ipaddress
-import datetime
+import json
+import re
 
+import ipaddress
 import pyparsing as pp
 
 from common import toint, unix_to_ISO, timeout
 
 
+
+def _dump(obj: pp.ParseResults | list | dict | Any | None, indent: int = 1) -> str:
+    spacing: str = '¦   ' * (indent)
+    objlist: list = []
+    objdict: dict = {}
+    result: str = f'({type(obj).__name__}) '
+
+    if obj is None:
+        return 'None'
+    elif isinstance(obj, pp.ParseResults):
+        objlist = obj._toklist
+        objdict = obj._tokdict
+    elif isinstance(obj, pp.results._ParseResultsWithOffset):
+        return _dump(obj.tup[0], indent)
+    elif isinstance(obj, list):
+        objlist = obj
+    elif isinstance(obj, dict):
+        objdict = obj
+
+    if len(objdict) > 0:
+        result += ''.join(
+            f'\n{spacing}- {key}: {_dump(value, indent + 1)}'
+            for key, value in objdict.items()
+        )
+    elif len(objlist) > 0:
+        result += ''.join(
+            f'\n{spacing}[{index}] {_dump(item, indent + 1)}'
+            for index, item in enumerate(objlist)
+        )
+    else:
+        result += str(obj)
+
+    return result
+
+
+
 # Grammar: see README.md
-
-
 class LayoutParser():
-    BULTIIN_TYPES : str = r'((u?int|float|bool)(8|16|32|64|128)|bool|byte|uuid|ipv?[46]|mac|time32|([cl][wu]|[wu][cl]|[clwu])?str|char(8|16|32)?|[uw]?char)'
-    SIZE_MODIFIERS : str = r'(8|16|32|64)bit|x(16|32|64|86)'
-    BYTE_ORDER_MODIFIERS : str = r'[lm]sb|[lb]e'
+    BULTIIN_TYPES: str = r'((u?int|float|bool)(8|16|32|64|128)|bool|byte|uuid|ipv?[46]|mac|time32|([cl][wu]|[wu][cl]|[clwu])?str|char(8|16|32)?|[uw]?char)'
+    SIZE_MODIFIERS: str = r'(8|16|32|64)bit|x(16|32|64|86)'
+    BYTE_ORDER_MODIFIERS: str = r'[lm]sb|[lb]e'
 
-    def __init__(self : 'LayoutParser') -> None:
+    def __init__(self: 'LayoutParser') -> None:
         number = pp.Regex(r'((?P<dec>[0-9_]+)|(?P<bin>0b[01_]+)|(?P<hex>0x[0-9a-f_]+|[0-9a-f_]+h))', re.I)
 
         comment: pp.ParserElement = pp.cpp_style_comment | pp.python_style_comment
@@ -39,6 +74,7 @@ class LayoutParser():
 
         keyword_struct = pp.Keyword('struct')
         keyword_union = pp.Keyword('union')
+        keyword_skip = pp.Keyword('skip')
         keyword_modifier_byteorder = pp.Regex(LayoutParser.BYTE_ORDER_MODIFIERS, re.I)
         keyword_modifier_size = pp.Regex(LayoutParser.SIZE_MODIFIERS, re.I)
         keyword_builtin = pp.Regex(LayoutParser.BULTIIN_TYPES)
@@ -53,6 +89,7 @@ class LayoutParser():
         token_type_identifier = pp.Forward()
 
         token_type_member = pp.Group(
+            pp.Optional(keyword_skip)('skip') +
             token_identifier('name') +
             symbol_colon +
             token_type_identifier('type') +
@@ -63,12 +100,13 @@ class LayoutParser():
 
         token_type_body = pp.Group(symbol_leftbrace + token_type_members('members') + symbol_rightbrace)
 
-        token_type_definition = pp.Group(
+        token_type_definition: pp.ParserElement = pp.Group(
+            pp.Optional(keyword_skip)('skip') +
             (keyword_struct | keyword_union)('type') +
             token_typename_userdef('name') +
             token_type_body('body') +
             symbol_semicolon
-        )
+        ).ignore_whitespace()
 
         token_inline_type_definition = pp.Group(
             (keyword_struct | keyword_union)('type') +
@@ -90,60 +128,67 @@ class LayoutParser():
             token_type_suffix('suffix')
         )
 
-        self.parser: pp.ParserElement = token_type_definition.ignore_whitespace()
+        code_file = pp.ZeroOrMore(token_type_definition)
+
+        self.parser: pp.ParserElement = code_file('definitions').ignore_whitespace()
         self.parser.ignore(comment)
         # self.parser.set_debug(True, True)
 
-
-    def __call__(self: 'LayoutParser', string : str) -> dict[str, Any]:
+    def __call__(self: 'LayoutParser', string: str) -> list[dict[str, Any]]:
         raw: pp.ParseResults = self.parser.parseString(string, parse_all = True)
 
-        def struct_converter(type : str, name : str | None, members : pp.ParseResults) -> dict[str, Any]:
+        def struct_converter(type: str, name: str | None, members: pp.ParseResults, skip: bool) -> dict[str, Any]:
+            print(_dump(members))
             return {
                 '$type': type,
+                '$skip': skip,
                 'name': name,
                 'body': {
                     '$type': 'body',
                     'members': [
                         {
                             '$type': 'member',
+                            '$skip': skip | ('skip' in member),
                             'name': member.name,
-                            'type': type_converter(member.type),
+                            'type': type_converter(member.type, skip),
                         } for member in members
                     ]
                 }
             }
 
-        def type_converter(item : pp.ParseResults) -> dict[str, Any]:
+        def type_converter(item: pp.ParseResults, skip: bool) -> dict[str, Any]:
             if 'builtin' in item:
                 return {
                     '$type': 'type',
+                    '$skip': skip,
                     'builtin': True,
                     'name': item.builtin,
                 }
             elif 'userdef' in item:
                 return {
                     '$type': 'type',
+                    '$skip': skip,
                     'builtin': False,
                     'name': item.userdef,
                 }
             elif 'inline' in item:
-                inline: pp.ParseResults = item.inline
+                inline: pp.ParseResults = item.inline # type: ignore
 
                 if 'type' in inline and 'body' in inline:
-                    return struct_converter(inline.type, None, inline.body.members)
+                    return struct_converter(inline.type, None, inline.body.members, skip) # type: ignore
                 else:
                     return {
                         '$type': 'unknown',
-                        '$raw': inline.dump()
+                        '$skip': skip,
+                        '$raw': _dump(inline),
                     }
             elif 'suffix' in item and 'base' in item:
-                result: dict[str, Any] = type_converter(item.base)
+                result: dict[str, Any] = type_converter(item.base, skip) # type: ignore
 
                 for suffix in item.suffix:
                     if 'array' in suffix:
-                        if 'size' in suffix.array:
-                            for raw_size in suffix.array.size:
+                        if 'size' in suffix.array: # type: ignore
+                            for raw_size in suffix.array.size: # type: ignore
                                 size: tuple[Any, str] = None, 'dynamic'
 
                                 if 'fixed' in raw_size:
@@ -151,11 +196,13 @@ class LayoutParser():
                                 elif 'dynamic' in raw_size:
                                     size = {
                                         '$type': 'reference',
+                                        '$skip': skip,
                                         'name': [token for token in raw_size.dynamic]
                                     }, 'reference'
 
                                 result = {
                                     '$type': 'array',
+                                    '$skip': skip,
                                     '$size': size[1],
                                     'base': result,
                                     'size': size[0],
@@ -163,6 +210,7 @@ class LayoutParser():
                         else:
                             result = {
                                 '$type': 'array',
+                                '$skip': skip,
                                 '$size': 'dynamic',
                                 'base': result,
                                 'size': None
@@ -170,57 +218,69 @@ class LayoutParser():
                     elif 'pointer' in suffix:
                         result = {
                             '$type': 'pointer',
+                            '$skip': skip,
                             'base': result
                         }
                     else:
                         result = {
                             '$type': 'unknown',
-                            '$raw': suffix.dump(),
+                            '$skip': skip,
+                            '$raw': _dump(suffix),
                             'base': result,
                         }
 
                 return result
             elif 'type' in item and 'body' in item:
-                return struct_converter(item.type, item.name if 'name' in item else None, item.body.members)
+                return struct_converter(
+                    item.type, # type: ignore
+                    item.name if 'name' in item else None, # type: ignore
+                    item.body.members, # type: ignore
+                    'skip' in item
+                )
             else:
                 return {
                     '$type': 'unknown',
-                    '$raw': item.dump()
+                    '$skip': skip,
+                    '$raw': _dump(item),
                 }
 
-        return type_converter(raw[0]) # type: ignore
+        return [
+            type_converter(p, False)
+            for p in raw.get('definitions', []) # type: ignore
+        ]
 
 
 class Endianness(Enum):
     LITTLE = 'little'
     BIG = 'big'
 
-    def __str__(self : 'Endianness') -> str:
+    def __str__(self: 'Endianness') -> str:
         return self.value
 
 
 @dataclass
 class InterpreterError:
-    def __init__(self : 'InterpreterError', message : str, scope : str) -> None:
+    def __init__(self: 'InterpreterError', message: str, scope: str) -> None:
         self.message: str = message
         self.scope: str = scope
-        # TODO : line, char, etc.
+        # TODO: line, char, etc.
 
-    def to_dict(self : 'InterpreterError') -> dict[str, Any]:
+    def to_dict(self: 'InterpreterError') -> dict[str, Any]:
         return {
             'message': self.message,
             'scope': self.scope,
-            # TODO : line, char, etc.
+            # TODO: line, char, etc.
         }
 
 
 @dataclass
 class InterpretedLayout:
     def __init__(
-            self : 'InterpretedLayout',
-            offset : int,
+            self: 'InterpretedLayout',
+            skip: bool,
+            offset: int,
             raw: bytes,
-            scope : str | None,
+            scope: str | None,
             name: str,
             repr: str | None = None,
             data: Any | None = None,
@@ -228,24 +288,30 @@ class InterpretedLayout:
             errors: list[InterpreterError] = []
     ) -> None:
         self.raw: bytes = raw
+        self.skip: bool = skip
         self.offset: int = offset
         self.name: str = name
         self.size: int = len(raw)
         self.repr: str | None = repr
         self.data: Any | None = data
-        self.path : str = f'{scope}.{self.name}' if scope else self.name or '/'
+        self.path: str = f'{scope}.{self.name}' if scope else self.name or '/'
         self.members: list['InterpretedLayout'] = members
         self.errors: list[InterpreterError] = errors
 
-    def add_error(self : 'InterpretedLayout', message : str) -> None:
+    @staticmethod
+    def skipped(scope: str | None, name: str) -> 'InterpretedLayout':
+        return InterpretedLayout(True, 0, b'', scope, name, '(skipped)', None, [], [])
+
+    def add_error(self: 'InterpretedLayout', message: str) -> None:
         self.errors.append(InterpreterError(message, self.path))
 
-    def __str__(self : 'InterpretedLayout') -> str:
+    def __str__(self: 'InterpretedLayout') -> str:
         return f'{'⚠️ ' if len(self.errors) > 0 else ''}{self.name}@[{self.offset}:{self.offset + self.size}, {self.size}]: "{self.repr}" ({self.data})'
 
-    def to_dict(self : 'InterpretedLayout') -> dict[str, Any]:
+    def to_dict(self: 'InterpretedLayout') -> dict[str, Any]:
         return {
             'raw': base64.b64encode(self.raw).decode('utf-8'),
+            'skip': self.skip,
             'offset': self.offset,
             'path': self.path,
             'name': self.name,
@@ -260,47 +326,71 @@ class InterpretedLayout:
 @dataclass
 class InterpreterContext:
     def __init__(
-            self : 'InterpreterContext',
-            parent : 'InterpreterContext | None',
-            offset : int,
-            data : bytes,
-            name : str,
+            self: 'InterpreterContext',
+            parent: 'InterpreterContext | None',
+            offset: int,
+            data: bytes,
+            name: str,
             endianness: Endianness | None,
-            pointer_size: int | None
+            pointer_size: int | None,
+            skip: bool | None,
     ) -> None:
         self.parent: InterpreterContext | None = parent
         self.data: bytes = data[offset:]
         self.name: str = name
-        self.errors : list[InterpreterError] = []
+        self.errors: list[InterpreterError] = []
         self.global_name: str = f'{parent.global_name}.{name}' if parent and name else (parent.global_name or name if parent else name)
         self.global_data: bytes = parent.global_data if parent else data
         self.global_offset: int = parent.global_offset + offset if parent else offset
-        self.scope : dict[str | None, Any] = { **parent.scope } if parent else { }
-        self.endianness: Endianness | None = endianness if endianness else parent.endianness if parent else None
-        self.pointer_size: int | None = pointer_size if pointer_size else parent.pointer_size if parent else None
+        self.scope: dict[str | None, Any] = { **parent.scope } if parent else { }
+        self.endianness: Endianness | None = endianness if endianness else (parent.endianness if parent else None)
+        self.pointer_size: int | None = pointer_size if pointer_size else (parent.pointer_size if parent else None)
+        self.skip: bool | None = skip if skip is not None else (parent.skip if parent else None)
 
-    def __str__(self : 'InterpreterContext') -> str:
-        return f'{'⚠️ ' if len(self.errors) > 0 else ''}{self.global_name} @ {self.global_offset:08x}: {self.data}'
+    def __str__(self: 'InterpreterContext') -> str:
+        prefix: str = ''
+
+        if len(self.errors):
+            prefix += f'⚠️{len(self.errors)} '
+
+        if self.skip:
+            prefix += '(skipped) '
+
+        return f'{prefix}{self.global_name} @ {self.global_offset:08x}: {self.data}'
 
     @staticmethod
-    def global_context(interpreter: 'LayoutInterpreter', data : bytes, name : str | None = None) -> 'InterpreterContext':
+    def global_context(interpreter: 'LayoutInterpreter', data: bytes, name: str, skip: bool | None) -> 'InterpreterContext':
         return InterpreterContext(
             None,
             0,
             data,
-            interpreter.layout.get('name', '') if name is None else name,
+            name,
             interpreter.default_endianness,
-            interpreter.pointer_size
+            interpreter.pointer_size,
+            skip
         )
 
-    def add_error(self : 'InterpreterContext', message : str) -> None:
+    def add_error(self: 'InterpreterContext', message: str) -> None:
         self.errors.append(InterpreterError(message, self.global_name))
 
-    def local(self : 'InterpreterContext', offset : int, name : str, endianness: Endianness | None = None, pointer_size: int | None = None) -> 'InterpreterContext':
-        return InterpreterContext(self, offset, self.data, name, endianness, pointer_size)
+    def local(
+            self: 'InterpreterContext',
+            offset: int,
+            name: str,
+            endianness: Endianness | None = None,
+            pointer_size: int | None = None,
+            skip: bool | None = None
+    ) -> 'InterpreterContext':
+        return InterpreterContext(self, offset, self.data, name, endianness, pointer_size, skip)
 
-    def result(self : 'InterpreterContext', size : int, repr : str | None, data : Any | None, members : list[InterpretedLayout]) -> InterpretedLayout:
-        member_names : dict[str, int] = {}
+    def result(
+            self: 'InterpreterContext',
+            size: int,
+            repr: str | None,
+            data: Any | None,
+            members: list[InterpretedLayout]
+    ) -> InterpretedLayout:
+        member_names: dict[str, int] = {}
 
         for member in members:
             if member.name:
@@ -310,19 +400,23 @@ class InterpreterContext:
             if member_names[name] > 1:
                 self.add_error(f'Duplicate member definition "{name}" in "{self.global_name}".')
 
-        return InterpretedLayout(
-            self.global_offset,
-            self.data[:size],
-            self.global_name,
-            self.name,
-            repr,
-            data,
-            members,
-            self.errors
-        )
+        if self.skip:
+            return InterpretedLayout.skipped(self.global_name, self.name)
+        else:
+            return InterpretedLayout(
+                False,
+                self.global_offset,
+                self.data[:size],
+                self.global_name,
+                self.name,
+                repr,
+                data,
+                members,
+                self.errors
+            )
 
-    def resolve(self : 'InterpreterContext', member : str | list[str]) -> InterpretedLayout | None:
-        member_name : str = member if isinstance(member, str) else '.'.join(member)
+    def resolve(self: 'InterpreterContext', member: str | list[str]) -> InterpretedLayout | None:
+        member_name: str = member if isinstance(member, str) else '.'.join(member)
 
         if member_name in self.scope:
             return self.scope[member_name]
@@ -337,38 +431,41 @@ class InterpreterContext:
 class GlobalInterpreterResult:
     def __init__(self: 'GlobalInterpreterResult', result: list[InterpretedLayout]) -> None:
         self.errors: list[InterpreterError] = []
-        self.data: InterpretedLayout = result
+        self.data: list[InterpretedLayout] = result
 
-        def collect_errors(layout : InterpretedLayout) -> None:
+        def collect_errors(layout: InterpretedLayout) -> None:
             self.errors.extend(layout.errors)
 
             for member in layout.members:
                 collect_errors(member)
 
-        self.success: bool = len(self.data.errors) == 0
+        for layout in result:
+            collect_errors(layout)
 
-    def to_dict(self : 'GlobalInterpreterResult') -> dict[str, Any]:
+        self.success: bool = len(self.errors) == 0
+
+    def to_dict(self: 'GlobalInterpreterResult') -> dict[str, Any]:
         return {
             'success': self.success,
-            'data': self.data.to_dict(),
+            'data': [data.to_dict() for data in self.data],
             'errors': [error.to_dict() for error in self.errors]
         }
 
 
 class LayoutInterpreter():
-    def __init__(self : 'LayoutInterpreter',
-                 layout : dict[str, Any],
-                 endianness : Endianness,
-                 pointer_size : int
+    def __init__(self: 'LayoutInterpreter',
+                 layout: list[dict[str, Any]],
+                 endianness: Endianness,
+                 pointer_size: int
     ) -> None:
-        self.layout: dict[str, Any] = layout
+        self.layout: list[dict[str, Any]] = layout
         self.default_endianness: Endianness = endianness
         self.pointer_size: int = pointer_size
 
     def interpret_data(
             self: 'LayoutInterpreter',
-            raw : bytes,
-            typename : str,
+            raw: bytes,
+            typename: str,
             endianness: Endianness | None = None,
             pointer_size: int | None = None
     ) -> tuple[str, Any | None, int]:
@@ -496,27 +593,23 @@ class LayoutInterpreter():
 
         return repr, data, len(raw)
 
-    def _interpret_builtin_type(self : 'LayoutInterpreter', context : InterpreterContext, typename : str) -> InterpretedLayout:
+    def _interpret_builtin_type(self: 'LayoutInterpreter', context: InterpreterContext, typename: str) -> InterpretedLayout:
         repr, data, size = self.interpret_data(context.data, typename)
 
         return context.result(size, repr, data, [])
 
-    def _interpret_pointer(self : 'LayoutInterpreter', context : InterpreterContext, base : dict[str, Any]) -> InterpretedLayout:
+    def _interpret_pointer(self: 'LayoutInterpreter', context: InterpreterContext, base: dict[str, Any]) -> InterpretedLayout:
         pointer_size: int = context.pointer_size if context.pointer_size else self.pointer_size
         data: bytes = context.data[:pointer_size]
-        address: int = 0
-
-        for i in range(pointer_size):
-            address <<= 8
-            address |= data[i] & 0xFF
-
+        address = int(self.interpret_data(data, f'uint{pointer_size * 8}', context.endianness, pointer_size)[1] or 0)
         subcontext = InterpreterContext(
             None,
             address,
             context.global_data,
             f'*{context.name}' if context.name else '*',
             context.endianness,
-            pointer_size
+            pointer_size,
+            context.skip
         )
         value: InterpretedLayout = self._interpret_member(subcontext, base)
 
@@ -527,15 +620,15 @@ class LayoutInterpreter():
             [value]
         )
 
-    def _interpret_array(self : 'LayoutInterpreter', context : InterpreterContext, base : dict[str, Any], size : dict[str, Any] | int | None, sizetype : str) -> InterpretedLayout:
-        elements : list[InterpretedLayout] = []
-        intsize : int = 0
-        offset : int = 0
+    def _interpret_array(self: 'LayoutInterpreter', context: InterpreterContext, base: dict[str, Any], size: dict[str, Any] | int | None, sizetype: str) -> InterpretedLayout:
+        elements: list[InterpretedLayout] = []
+        intsize: int = 0
+        offset: int = 0
 
         if sizetype == 'fixed':
             intsize = max(0, size if isinstance(size, int) else 0)
         elif sizetype == 'reference':
-            reference : list[str] = size['name']
+            reference: list[str] = size['name']
 
             if member := context.resolve(reference):
                 intsize = int(member.data or 0)
@@ -543,8 +636,8 @@ class LayoutInterpreter():
                 context.add_error(f'Cannot resolve member "{'.'.join(reference)}". Did you accidentally define "{'.'.join(reference)}" after "{context.global_name}" instead of before it?')
         elif sizetype == 'dynamic':
             pointer_size: int = context.pointer_size if context.pointer_size else self.pointer_size
-            _, raw_array_size, _ = self.interpret_data(context.data[:pointer_size], f'uint{pointer_size * 8}')
-            intsize = int(raw_array_size)
+            _, raw_array_size, _ = self.interpret_data(context.data[:pointer_size], f'uint{pointer_size * 8}', context.endianness, pointer_size)
+            intsize = int(raw_array_size or 0)
             offset += pointer_size
         else:
             context.add_error(f'Unknown/unsupported array type "{sizetype}".')
@@ -557,10 +650,10 @@ class LayoutInterpreter():
 
         return context.result(offset, f'{len(elements)} Items', [e.data for e in elements], elements)
 
-    def _interpret_member(self : 'LayoutInterpreter', context : InterpreterContext, type : dict[str, Any]) -> InterpretedLayout:
+    def _interpret_member(self: 'LayoutInterpreter', context: InterpreterContext, type: dict[str, Any]) -> InterpretedLayout:
         _type: str = type['$type']
 
-        # TODO : error on out of range pointer ?
+        # TODO: error on out of range pointer ?
 
         if _type == 'type':
             if type['builtin']:
@@ -579,55 +672,79 @@ class LayoutInterpreter():
 
         return context.result(0, f'(unknown: {type})', None, [])
 
-    def _interpret_union(self : 'LayoutInterpreter', context : InterpreterContext, members : list[dict[str, Any]]) -> InterpretedLayout:
+    def _interpret_union(self: 'LayoutInterpreter', context: InterpreterContext, members: list[dict[str, Any]]) -> InterpretedLayout:
         interpreted_members: list[InterpretedLayout] = []
         size: int = 0
 
         for member in members:
-            interpreted_member: InterpretedLayout = self._interpret_member(context.local(0, member['name']), member['type'])
-            interpreted_members.append(interpreted_member)
+            name: str = member['name']
+
+            if member.get('$skip') or context.skip:
+                interpreted_member = InterpretedLayout.skipped(context.global_name, name)
+            else:
+                local_context: InterpreterContext = context.local(0, name)
+                interpreted_member: InterpretedLayout = self._interpret_member(local_context, member['type'])
+
             size = max(size, interpreted_member.size)
+            interpreted_members.append(interpreted_member)
             context.scope[f'{context.global_name}.{interpreted_member.name}'] = interpreted_member
 
         return context.result(size, 'union { ... }', {m.name:m.data for m in interpreted_members}, interpreted_members)
 
-    def _interpret_struct(self : 'LayoutInterpreter', context : InterpreterContext, members : list[dict[str, Any]]) -> InterpretedLayout:
+    def _interpret_struct(self: 'LayoutInterpreter', context: InterpreterContext, members: list[dict[str, Any]]) -> InterpretedLayout:
         interpreted_members: list[InterpretedLayout] = []
         offset = 0
 
         for member in members:
-            interpreted_member: InterpretedLayout = self._interpret_member(context.local(offset, member['name']), member['type'])
+            name: str = member['name']
+
+            if member.get('$skip') or context.skip:
+                interpreted_member = InterpretedLayout.skipped(context.global_name, name)
+            else:
+                local_context: InterpreterContext = context.local(offset, name)
+                interpreted_member: InterpretedLayout = self._interpret_member(local_context, member['type'])
+
             interpreted_members.append(interpreted_member)
             offset += interpreted_member.size
             context.scope[f'{context.global_name}.{interpreted_member.name}'] = interpreted_member
 
         return context.result(offset, 'struct { ... }', {m.name:m.data for m in interpreted_members}, interpreted_members)
 
-    def __call__(self: 'LayoutInterpreter', data : bytes) -> GlobalInterpreterResult:
-        _type: str = self.layout['$type']
-        context: InterpreterContext = InterpreterContext.global_context(self, data)
-        result: InterpretedLayout = context.result(0, 'unknown { ... }', None, [])
+    def __call__(self: 'LayoutInterpreter', data: bytes) -> GlobalInterpreterResult:
+        results: list[InterpretedLayout] = []
 
-        try:
-            @timeout(seconds = 1)
-            def inner_interpret() -> None:
-                nonlocal result
+        for layout in self.layout:
+            _type: str = layout['$type']
+            context: InterpreterContext = InterpreterContext.global_context(
+                self,
+                data,
+                layout.get('name', ''),
+                layout.get('$skip')
+            )
+            result: InterpretedLayout = context.result(0, 'unknown { ... }', None, [])
 
-                if _type == 'struct':
-                    result = self._interpret_struct(context, self.layout['body']['members'])
-                elif _type == 'union':
-                    result = self._interpret_union(context, self.layout['body']['members'])
-                else:
-                    result.add_error(f'Unknown layout type: {_type}')
+            try:
+                @timeout(seconds = 1)
+                def inner_interpret() -> None:
+                    nonlocal result
 
-            inner_interpret()
-        except TimeoutError:
-            result.add_error(f'Interpetation timed out. This may be a hint of corrupted array sizes or invalid/overflowing pointers.')
-        except Exception as e:
-            result.add_error(f'Error interpreting layout: {str(e)}')
+                    if _type == 'struct':
+                        result = self._interpret_struct(context, layout['body']['members'])
+                    elif _type == 'union':
+                        result = self._interpret_union(context, layout['body']['members'])
+                    else:
+                        result.add_error(f'Unknown layout type: {_type}')
 
-        return GlobalInterpreterResult(result)
+                inner_interpret()
+            except TimeoutError:
+                result.add_error(f'Interpetation timed out. This may be a hint of corrupted array sizes or invalid/overflowing pointers.')
+            except Exception as e:
+                result.add_error(f'Error interpreting layout: {str(e)}')
+
+            results.append(result)
+
+        return GlobalInterpreterResult(results)
 
 
-# TODO : array of structs/unions
-# TODO : return which token/node/memeber and offset was interpreted when an error occurs
+# TODO: array of structs/unions
+# TODO: return which token/node/memeber and offset was interpreted when an error occurs

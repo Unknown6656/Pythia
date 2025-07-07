@@ -20,6 +20,7 @@ The language has the following grammar:
 ```bison
 identifier          := /[a-z_]\w*/
 
+// case-insensitive
 number              := /-?[0-9]+/               // decimal numbers
                      | /-?0b[01]+/              // binary numbers
                      | /-?0x[0-9a-f]+/          // hexadecimal numbers
@@ -33,6 +34,8 @@ modifier_ptr_size   := '8bit'                   // pointers and string/array len
                      | '16bit' | 'x16'          // pointers and string/array lengths are 16 bit large (2 bytes)
                      | '32bit' | 'x32' | 'x86'  // pointers and string/array lengths are 32 bit large (4 bytes)
                      | '64bit' | 'x64'          // pointers and string/array lengths are 64 bit large (8 bytes)
+
+modifier_dont_parse := 'skip'
 
 type_name_userdef   := identifier
 
@@ -77,11 +80,11 @@ type_name           := type_name_userdef
 type_base           := 'struct'
                      | 'union'
 
-type_definition     := type_base type_name_userdef type_body ';'
+type_definition     := [modifier_dont_parse] type_base type_name_userdef type_body ';'
 
 type_body           := '{' type_field* '}'
 
-type_field          := identifier ':' type_identifier [modifier_byteorder] ';'
+type_field          := [modifier_dont_parse] identifier ':' type_identifier [modifier_byteorder] ';'
 
 type_identifier     := type_name
                      | type_base type_body
@@ -94,4 +97,6 @@ array_dimension     := <empty>
 
 array_size          := array_dimension
                      | array_size ',' array_dimension
+
+code_file           := type_definition*
 ```
