@@ -29,20 +29,24 @@ number              := /-?[0-9]+/               // decimal numbers
                      | /-?0x[0-9a-f]+/          // hexadecimal numbers
 
 // case-insensitive
-modifier_byteorder  := 'LE' | 'LSB'             // little endian (least significant byte first)
-                     | 'BE' | 'MSB'             // big endian (most significant byte first)
+modifier_byteorder  := '__LE' | '__LSB'         // little endian (least significant byte first)
+                     | '__BE' | '__MSB'         // big endian (most significant byte first)
 
 // case-insensitive
-modifier_ptr_size   := '8bit'                   // pointers and string/array lengths are 8 bit large (1 byte)
-                     | '16bit' | 'x16'          // pointers and string/array lengths are 16 bit large (2 bytes)
-                     | '32bit' | 'x32' | 'x86'  // pointers and string/array lengths are 32 bit large (4 bytes)
-                     | '64bit' | 'x64'          // pointers and string/array lengths are 64 bit large (8 bytes)
+modifier_ptr_size   := '__x8'                   // pointers and string/array lengths are 8 bit large (1 byte)
+                     | '__x16'                  // pointers and string/array lengths are 16 bit large (2 bytes)
+                     | '__x32' | '__x86'        // pointers and string/array lengths are 32 bit large (4 bytes)
+                     | '__x64'                  // pointers and string/array lengths are 64 bit large (8 bytes)
+
+fixed_size_constraint:= '<' number '>'          // sets the annotated field/struct/union to a fixed size of <n> bytes. This
+                                                //  may be useful in clamping or padding scenarios, e.g.: "padding: void<6>;"
 
 modifier_dont_parse := 'skip'
 
 type_name_userdef   := identifier
 
-type_name_builtin   := 'bool8' | 'bool'         // 8 bit wide boolean (1 byte)
+type_name_builtin   := 'void'                   // 0 byte wide structure
+                     | 'bool8' | 'bool'         // 8 bit wide boolean (1 byte)
                      | 'bool16'                 // 16 bit wide boolean (2 bytes)
                      | 'bool32'                 // 32 bit wide boolean (4 bytes)
                      | 'bool64'                 // 64 bit wide boolean (8 bytes)
@@ -57,6 +61,8 @@ type_name_builtin   := 'bool8' | 'bool'         // 8 bit wide boolean (1 byte)
                      | 'uint32'                 // 32 bit wide unsigned integer
                      | 'uint64'                 // 64 bit wide unsigned integer
                      | 'uint128'                // 128 bit wide unsigned integer
+                     | 'addr' | 'ptr'           // an unsigned integer with a size depending on the environment, i.e.:
+                                                //  32 bit in an '__x32' environment, 64 bit in an '__x64' environment, etc.
                      | 'float8'                 // 8 bit wide IEEE754 floating point number
                      | 'float16'                // 16 bit wide IEEE754 floating point number
                      | 'float32'                // 32 bit wide IEEE754 floating point number
@@ -83,16 +89,16 @@ type_name           := type_name_userdef
 type_base           := 'struct'
                      | 'union'
 
-type_definition     := [modifier_dont_parse] type_base type_name_userdef type_body ';'
+type_definition     := [modifier_dont_parse] [modifier_byteorder] [modifier_ptr_size] type_base type_name_userdef [fixed_size_constraint] type_body ';'
 
 type_body           := '{' type_field* '}'
 
-type_field          := [modifier_dont_parse] identifier ':' type_identifier [modifier_byteorder] ';'
+type_field          := [modifier_dont_parse] identifier ':' [modifier_byteorder] [modifier_ptr_size] type_identifier [fixed_size_constraint] ';'
 
 type_identifier     := type_name
                      | type_base type_body
                      | type_identifier '[' array_size ']'
-                     | type_identifier '*' [modifier_ptr_size]
+                     | type_identifier '*'
 
 array_dimension     := <empty>
                      | number
