@@ -175,7 +175,10 @@ function FileProvider({ children })
 
     const set_current_file = async id_or_name =>
     {
-        const data = await CallAPI('file/info', { name: id_or_name, full: true });
+        const data = await CallAPI('file/info', {
+            name: id_or_name,
+            full: true,
+        });
 
         data.data = atob(data.data || '', );
 
@@ -309,8 +312,8 @@ function SettingsProvider({ children })
 
 function BinaryViewer()
 {
-    const { current_file, offset, length, set_cursor } = React.useContext(FileContext);
     const { little_endian, pointer_size } = React.useContext(SettingsContext);
+    const { current_file, offset, length, set_cursor } = React.useContext(FileContext);
     const inspected = useVariable(null);
     const ptr_size = pointer_size.get();
     const le = little_endian.get();
@@ -378,7 +381,7 @@ function BinaryViewer()
                     {chunks.map((chunk, row) =>
                     {
                         return <tr key={row} active={active_row == row ? '' : null}>
-                            <th>0x{hex(row * chunk_size, ptr_size * 2)}</th>
+                            <th>0x{hex(row * chunk_size, 16)}</th>
                             <th spacer/>
                             {chunk.map((byte, col) =>
                             {
@@ -652,10 +655,10 @@ function OutputWindow()
 
     return <output-window>
         <OutputStructure structure={interpreted.value}/>
-        <br/>
+        {/* <br/>
         <hr/>
         <br/>
-        {<$ interpreted={interpreted.value} parsed={parsed.value}/>}
+        {<$ interpreted={interpreted.value} parsed={parsed.value}/>} */}
     </output-window>;
 }
 
@@ -803,7 +806,7 @@ function MainPage()
             </select>
             <separator/>
             Pointer/Address Size:
-            <select defaultValue={`x${pointer_size.get()}`}
+            <select defaultValue={`x${pointer_size.get() << 3}`}
                     onChange={e => pointer_size.set(+e.target.value.slice(1) >> 3)}>
                 <option value="x8">8 Bit (1 Byte)</option>
                 <option value="x16">16 Bit (2 Bytes)</option>

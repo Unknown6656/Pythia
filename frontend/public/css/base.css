@@ -459,7 +459,7 @@ output-window table.output-structure element-name[state="closed" I] {
 }
 
 output-window table.output-structure element-name::after {
-    margin-left: 2ch;
+    margin-left: 3ch;
     content: attr(displayname);
     display: block;
 }
