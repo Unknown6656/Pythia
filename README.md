@@ -7,6 +7,9 @@
 **Pythia** aims to be a light-weight, platform-agnostic analysis and reverse engineering tool for binary data.
 (TODO : add description)
 
+![](docs/screenshot-01.png)
+
+
 
 ## Pythia coding language
 
