@@ -23,11 +23,8 @@ parser = LayoutParser()
 files = PythiaFiles()
 
 
-# only for testing purposes
-files.create('test', '\x14This is a test file.\0\0\0\x2a\0\0\0\0\0\0\0\x15Zusätzlicher Text ⚠️❤️'.encode('utf-8'))
-
-# with open('/usr/local/lib/libpython3.so', 'rb') as f:
-#     files.create('test', f.read())
+with open('/usr/local/bin/python3', 'rb') as __fs:
+    files.create('test', __fs.read())
 
 
 def success(data: Any | None = None) -> Response:
