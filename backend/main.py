@@ -159,7 +159,7 @@ async def file_inspect(request: Request) -> Response:
         content += b'\x00' * (16 - len(content))
 
     def interpret(type: str) -> str:
-        return interpreter.interpret_data(content, type, endianness, pointer_size)[0]
+        return interpreter.interpret_data(content, type, endianness, pointer_size, None)[0]
 
     result: dict[str, Any] = {
         'name': name,
@@ -196,7 +196,7 @@ async def file_inspect(request: Request) -> Response:
     }
 
     if len(content) >= 6:
-        result['ipv4port'] = f'{interpret('ipv4')}:{interpreter.interpret_data(content[4:], 'uint16')[0].replace("'", "")}'
+        result['ipv4port'] = f'{interpret('ipv4')}:{interpreter.interpret_data(content[4:], 'uint16', endianness, pointer_size, None)[0].replace("'", "")}'
     else:
         result['ipv4port'] = f'{result['ipv4']}:0'
 
@@ -257,6 +257,6 @@ async def code_parse(request: Request) -> Response:
 @app.post(f'{BASE_URL}/code/syntax')
 async def code_syntax() -> Response:
     return success({
-        'keywords': f'\\b({LayoutParser.BULTIIN_TYPES}|struct|union|skip|[lm]sb|[lb]e)\\b',
-        'comments': r'(#(?:[^#\n]|#\n?)*|//(?:[^\\\n]|\\\n?)*|/\*[^]*?(?:\*/|$))',
+        'keywords': f'\\b({LayoutParser.BULTIIN_TYPES}|struct|union|__([lm]sb|[lb]e|x(86?|16|32|64)))\\b',
+        'comments': r'(#(?:[^#\n]|#\n?)*|//(?:[^\\\n]|\\\n?)*|/\*[^]*?(?:\*/|$))|\bskip\b',
     })
