@@ -4,6 +4,45 @@ import functools
 import signal
 import sys
 
+import pyparsing as pp
+
+
+def _dumps(obj: pp.ParseResults | list | dict | Any | None, indent: int = 1) -> str:
+    spacing: str = '¦   ' * (indent)
+    objlist: list = []
+    objdict: dict = {}
+    result: str = f'({type(obj).__name__}) '
+
+    if obj is None:
+        return 'None'
+    elif isinstance(obj, pp.ParseResults):
+        objlist = obj._toklist
+        objdict = obj._tokdict
+    elif isinstance(obj, pp.results._ParseResultsWithOffset):
+        return _dumps(obj.tup[0], indent)
+    elif isinstance(obj, list):
+        objlist = obj
+    elif isinstance(obj, dict):
+        objdict = obj
+
+    if len(objdict) > 0:
+        result += ''.join(
+            f'\n{spacing}- {key}: {_dumps(value, indent + 1)}'
+            for key, value in objdict.items()
+        )
+    elif len(objlist) > 0:
+        result += ''.join(
+            f'\n{spacing}[{index}] {_dumps(item, indent + 1)}'
+            for index, item in enumerate(objlist)
+        )
+    else:
+        result += str(obj)
+
+    return result
+
+def _dump(obj: Any, indent: int = 1) -> Any:
+    print('\n', _dumps(obj, indent), '\n')
+    return obj
 
 def timeout(seconds: int = 5, default: Any | None = None):
     if sys.platform == "win32":

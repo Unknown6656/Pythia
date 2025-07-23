@@ -109,58 +109,65 @@ async function CallAPI(url, data)
 
 
 const INITIAL_CODE = `// example Pythia code for parsing an ELF binary file
-
-__le __x64 struct ELF_HEADER
-{
-    e_ident: struct
-    {
-        ei_magic:       char[4];
-        ei_class:       uint8;
-        ei_data:        uint8;
-        ei_version:     uint8;
-        ei_osabi:       uint8;
-        ei_abiversion:  uint8;
-        ei_pad:         void<6>;
-        ei_nident:      uint8;
+__le __x32 struct A {
+    a: custom_type;
+    b: __x8 char*[A.a,4];
+    d: struct {
+        e: uint16[];
     };
-    e_type:         uint16;
-    e_machine:      uint16;
-    e_version:      uint32;
-    e_entry:        void*;
-    e_phoff:        ELF_PROGRAM_HEADER*;
-    e_shoff:        ELF_SECTION_HEADER*;
-    e_flags:        uint32;
-    e_ehsize:       uint16;
-    e_phentsize:    uint16;
-    e_phnum:        uint16;
-    e_shentsize:    uint16;
-    e_shnum:        uint16;
-    e_shstrndx:     uint16;
 };
 
-skip __le __x64 struct ELF_PROGRAM_HEADER {
-    p_type:         uint32;
-    p_flags:        uint32;
-    p_offset:       ptr;
-    p_vaddr:        ptr;
-    p_paddr:        ptr;
-    p_filesz:       uint64;
-    p_memsz:        uint64;
-    p_align:        uint64;
-};
+// __le __x64 struct ELF_HEADER
+// {
+//     e_ident: struct
+//     {
+//         ei_magic:       char[4];
+//         ei_class:       uint8;
+//         ei_data:        uint8;
+//         ei_version:     uint8;
+//         ei_osabi:       uint8;
+//         ei_abiversion:  uint8;
+//         ei_pad:         void<6>;
+//         ei_nident:      uint8;
+//     };
+//     e_type:         uint16;
+//     e_machine:      uint16;
+//     e_version:      uint32;
+//     e_entry:        void*;
+//     e_phoff:        ELF_PROGRAM_HEADER*;
+//     e_shoff:        ELF_SECTION_HEADER*;
+//     e_flags:        uint32;
+//     e_ehsize:       uint16;
+//     e_phentsize:    uint16;
+//     e_phnum:        uint16;
+//     e_shentsize:    uint16;
+//     e_shnum:        uint16;
+//     e_shstrndx:     uint16;
+// };
 
-skip __le __x64 struct ELF_SECTION_HEADER {
-    sh_name:        uint32;
-    sh_type:        uint32;
-    sh_flags:       uint64;
-    sh_addr:        ptr;
-    sh_offset:      ptr;
-    sh_size:        uint64;
-    sh_link:        uint32;
-    sh_info:        uint32;
-    sh_addralign:   uint64;
-    sh_entsize:     uint64;
-};
+// skip __le __x64 struct ELF_PROGRAM_HEADER {
+//     p_type:         uint32;
+//     p_flags:        uint32;
+//     p_offset:       ptr;
+//     p_vaddr:        ptr;
+//     p_paddr:        ptr;
+//     p_filesz:       uint64;
+//     p_memsz:        uint64;
+//     p_align:        uint64;
+// };
+
+// skip __le __x64 struct ELF_SECTION_HEADER {
+//     sh_name:        uint32;
+//     sh_type:        uint32;
+//     sh_flags:       uint64;
+//     sh_addr:        ptr;
+//     sh_offset:      ptr;
+//     sh_size:        uint64;
+//     sh_link:        uint32;
+//     sh_info:        uint32;
+//     sh_addralign:   uint64;
+//     sh_entsize:     uint64;
+// };
 `;
 const FileContext = React.createContext(null);
 const CodeContext = React.createContext(null);
@@ -230,8 +237,12 @@ function FileProvider({ children })
 function CodeProvider({ children })
 {
     const code = useVariable(null);
-    const parsed = useVariable(null);
     const error_list = useVariable(null);
+    const interpreted = useVariable(null);
+    const { little_endian, pointer_size } = React.useContext(SettingsContext);
+    const { current_file } = React.useContext(FileContext);
+    const ptr_size = pointer_size.get();
+    const le = little_endian.get();
 
     const set_code = async code_text =>
     {
@@ -239,33 +250,37 @@ function CodeProvider({ children })
             return;
 
         code.set(code_text);
+        error_list.set([]);
 
-        const data = await CallAPI('code/parse', { code: code_text });
-
-        if (data.success)
+        if (code_text && current_file.value && current_file.value.id)
         {
-            parsed.set(data.parsed);
-            error_list.set(null);
-        }
-        else
-        {
-            const error_data = data.error || {
-                'type': '(unknown)',
-                'message': 'An unknown error occurred while parsing the code.',
-                'line': 0,
-                'column': 0,
-                'text': null,
-            };
+            const data = await CallAPI('file/parse', {
+                code: code_text,
+                name: current_file.value.id,
+                offset: 0,
+                little_endian: le,
+                pointer_size: ptr_size,
+            });
+            const errors = [];
 
-            error_data.length = (error_data.text || '').length;
-            parsed.set(null);
-            error_list.set([error_data]);
+            if (!data.success)
+                (data.errors || []).map(e => errors.push({
+                    message: e.message || 'An error occurred while interpreting the binary file.',
+                    type: e.type || 'InterpretationError',
+                    line: e.line || -1,
+                    text: e.text || data.path,
+                    column: e.column || -1,
+                    length: (e.text || '').length,
+                }));
+
+            error_list.set(errors);
+            interpreted.set(data.data || []);
         }
     }
 
     return <CodeContext.Provider value={{
         code,
-        parsed,
+        interpreted,
         error_list,
         set_code
     }}>
@@ -612,53 +627,17 @@ function CodeErrorWindow()
 
 function OutputWindow()
 {
-    const { little_endian, pointer_size } = React.useContext(SettingsContext);
-    const { parsed, error_list } = React.useContext(CodeContext);
-    const { current_file } = React.useContext(FileContext);
-    const interpreted = useVariable(null);
-    const ptr_size = pointer_size.get();
-    const le = little_endian.get();
-
-    React.useEffect(() =>
-    {
-        if (parsed.value && current_file.value && current_file.value.id)
-            (async () =>
-            {
-                const data = await CallAPI('file/interpret', {
-                    code: parsed.value,
-                    name: current_file.value.id,
-                    offset: 0,
-                    little_endian: le,
-                    pointer_size: ptr_size,
-                });
-                const errors = [];
-
-                if (!data.success)
-                    (data.errors || []).map(e => errors.push({
-                        message: e.message || 'An error occurred while interpreting the binary file.',
-                        type: e.type || 'InterpretationError',
-                        line: -1,
-                        text: data.path,
-                        column: -1,
-                        length: 0,
-                    }));
-
-                error_list.set(errors);
-                interpreted.set(data.data || []);
-            })();
-    }, [
-        le,
-        ptr_size,
-        parsed.value,
-        (current_file.value || { id: null }).id
-    ]);
+    const { interpreted } = React.useContext(CodeContext);
 
     return <output-window>
-        <OutputStructure structure={interpreted.value}/>
-        {/* <br/>
-        <hr/>
-        <br/>
-        {<$ interpreted={interpreted.value} parsed={parsed.value}/>} */}
+        <details>
+            <summary>result</summary>
+            <OutputStructure structure={interpreted.value}/>
+        </details>
+        <details>
+            <summary>interpreted</summary>
+            <$ interpreted={interpreted.value}/>
+        </details>
     </output-window>;
 }
 

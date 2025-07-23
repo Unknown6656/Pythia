@@ -8,8 +8,14 @@ from fastapi.responses import RedirectResponse
 
 import pyparsing as pp
 
-from parser import LayoutParser, LayoutInterpreter, GlobalInterpreterResult, Endianness
+from parser import LayoutParser, Endianness, ParserConstructor, ParsedFile
+from interpreter import LayoutInterpreter, GlobalInterpreterResult
 from files import PythiaFileInfo, PythiaFiles
+
+
+
+
+print('\033c', end='')#clear terminal. only for debug reasons
 
 
 BASE_URL = '/api'
@@ -24,7 +30,7 @@ files = PythiaFiles()
 
 
 with open('/usr/local/bin/python3', 'rb') as __fs:
-    files.create('test', __fs.read())
+    files.create('test', __fs.read()[:1024])
 
 
 def success(data: Any | None = None) -> Response:
@@ -202,61 +208,54 @@ async def file_inspect(request: Request) -> Response:
 
     return success(result)
 
-@app.post(f'{BASE_URL}/file/interpret')
+@app.post(f'{BASE_URL}/file/parse')
 async def file_parse(request: Request) -> Response:
-    reqjson: dict[str, Any] = await request.json()
-    code: list[dict[str, Any]] = reqjson.get('code', [])
-    name: str = reqjson.get('name', '')
-    little_endian: bool = bool(reqjson.get('little_endian', True))
-    pointer_size: int = int(reqjson.get('pointer_size', 8))
-
-    if not name or not code:
-        return Response(None, 400)
-
-    if (file := files[name]) is None:
-        return Response(None, 404)
-    else:
-        interpreter = LayoutInterpreter(code, Endianness.LITTLE if little_endian else Endianness.BIG, pointer_size)
-        result: GlobalInterpreterResult = interpreter(file.data)
-
-        return success(result.to_dict())
-
-@app.post(f'{BASE_URL}/code/parse')
-async def code_parse(request: Request) -> Response:
     response: dict[str, Any] = {
         'success': False,
-        'error': None,
-        'parsed': None
+        'errors': [],
+        'data': None
     }
 
     try:
         reqjson: dict[str, Any] = await request.json()
         code: str = reqjson.get('code', '')
+        name: str = reqjson.get('name', '')
+        little_endian: bool = bool(reqjson.get('little_endian', True))
+        pointer_size: int = int(reqjson.get('pointer_size', 8))
 
-        response['parsed'] = parser(code)
-        response['success'] = True
+        if not name or not code:
+            return Response(None, 400)
+
+        if (file := files[name]) is None:
+            return Response(None, 404)
+        else:
+            parsed: list[ParsedFile] = parser(code)
+            interpreter = LayoutInterpreter(parsed, Endianness.LITTLE if little_endian else Endianness.BIG, pointer_size)
+            result: GlobalInterpreterResult = interpreter(file.data)
+
+            response = result.to_dict()
     except pp.ParseException as e:
-        response['error'] = {
+        response['errors'] = [{
             'type': 'ParseException',
             'message': str(e),
             'line': e.lineno,
             'column': e.column,
             'text': e.line,
-        }
+        }]
     except Exception as e:
-        response['error'] = {
+        response['errors'] = [{
             'type': str(type(e)),
             'message': str(e),
             'line': 0,
             'column': 0,
             'text': None,
-        }
+        }]
 
     return success(response)
 
 @app.post(f'{BASE_URL}/code/syntax')
 async def code_syntax() -> Response:
     return success({
-        'keywords': f'\\b({LayoutParser.BULTIIN_TYPES}|struct|union|__([lm]sb|[lb]e|x(86?|16|32|64)))\\b',
+        'keywords': f'\\b({ParserConstructor.BULTIIN_TYPES}|struct|union|enum|flags|__([lm]sb|[lb]e|x(86?|16|32|64)))\\b',
         'comments': r'(#(?:[^#\n]|#\n?)*|//(?:[^\\\n]|\\\n?)*|/\*[^]*?(?:\*/|$))|\bskip\b',
     })

@@ -29,11 +29,11 @@ number              := /-?[0-9]+/               // decimal numbers
                      | /-?0x[0-9a-f]+/          // hexadecimal numbers
 
 // case-insensitive
-modifier_byteorder  := '__LE' | '__LSB'         // little endian (least significant byte first)
+modifier_endianess  := '__LE' | '__LSB'         // little endian (least significant byte first)
                      | '__BE' | '__MSB'         // big endian (most significant byte first)
 
 // case-insensitive
-modifier_ptr_size   := '__x8'                   // pointers and string/array lengths are 8 bit large (1 byte)
+modifier_addr_size  := '__x8'                   // pointers and string/array lengths are 8 bit large (1 byte)
                      | '__x16'                  // pointers and string/array lengths are 16 bit large (2 bytes)
                      | '__x32' | '__x86'        // pointers and string/array lengths are 32 bit large (4 bytes)
                      | '__x64'                  // pointers and string/array lengths are 64 bit large (8 bytes)
@@ -86,17 +86,17 @@ type_name_builtin   := 'void'                   // 0 byte wide structure
 type_name           := type_name_userdef
                      | type_name_builtin
 
-type_base           := 'struct'
+struct_type         := 'struct'
                      | 'union'
 
-type_definition     := [modifier_dont_parse] [modifier_byteorder] [modifier_ptr_size] type_base type_name_userdef [fixed_size_constraint] type_body ';'
+struct_definition   := [modifier_dont_parse] [modifier_endianess] [modifier_addr_size] struct_type type_name_userdef [fixed_size_constraint] struct_body ';'
 
-type_body           := '{' type_field* '}'
+struct_body         := '{' struct_member* '}'
 
-type_field          := [modifier_dont_parse] identifier ':' [modifier_byteorder] [modifier_ptr_size] type_identifier [fixed_size_constraint] ';'
+struct_member       := [modifier_dont_parse] identifier ':' [modifier_endianess] [modifier_addr_size] type_identifier [fixed_size_constraint] ';'
 
 type_identifier     := type_name
-                     | type_base type_body
+                     | struct_type struct_body
                      | type_identifier '[' array_size ']'
                      | type_identifier '*'
 
@@ -106,6 +106,15 @@ array_dimension     := <empty>
 
 array_size          := array_dimension
                      | array_size ',' array_dimension
+
+enum_member         := identifier ['=' number] ';'
+
+enum_body           := '{' enum_member* '}'
+
+enum_definition     := [modifier_endianess] [modifier_addr_size] ['flags'] 'enum' identifier ':' type_name enum_body ';'
+
+type_definition     := struct_definition
+                     | enum_definition
 
 code_file           := type_definition*
 ```
