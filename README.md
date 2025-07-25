@@ -41,7 +41,7 @@ modifier_addr_size  := '__x8'                   // pointers and string/array len
 fixed_size_constraint:= '<' number '>'          // sets the annotated field/struct/union to a fixed size of <n> bytes. This
                                                 //  may be useful in clamping or padding scenarios, e.g.: "padding: void<6>;"
 
-modifier_dont_parse := 'skip'
+main_parse_point    := 'parse'
 
 type_name_userdef   := identifier
 
@@ -89,11 +89,11 @@ type_name           := type_name_userdef
 struct_type         := 'struct'
                      | 'union'
 
-struct_definition   := [modifier_dont_parse] [modifier_endianess] [modifier_addr_size] struct_type type_name_userdef [fixed_size_constraint] struct_body ';'
+struct_definition   := [main_parse_point] [modifier_endianess] [modifier_addr_size] struct_type type_name_userdef [fixed_size_constraint] struct_body ';'
 
 struct_body         := '{' struct_member* '}'
 
-struct_member       := [modifier_dont_parse] identifier ':' [modifier_endianess] [modifier_addr_size] type_identifier [fixed_size_constraint] ';'
+struct_member       := identifier ':' [modifier_endianess] [modifier_addr_size] type_identifier [fixed_size_constraint] ';'
 
 type_identifier     := type_name
                      | struct_type struct_body

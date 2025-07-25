@@ -40,92 +40,93 @@ class StructType(str, Enum):
     def __str__(self: 'StructType') -> str:
         return self.value
 
-class ParsedObject(dict):
-    def __init__(self: 'ParsedObject', loc: int, **kwargs) -> None:
-        super().__init__(**kwargs)
-        self['$loc'] = loc
-        self.loc: int = loc
+class ParsedObject:
+    def __init__(self: 'ParsedObject', source_code: str, source_location: int, source_token: pp.ParseResults) -> None:
+        self.lineno: int = pp.lineno(source_location, source_code)
+        self.column: int = pp.col(source_location, source_code)
+        self.length: int = len(str(source_token[0]))
+        self.source_code: str = source_code
+        self.source_location: int = source_location
+        self.source_token: pp.ParseResults = source_token
+
+    @staticmethod
+    def empty() -> 'ParsedObject': return ParsedObject('', 0, pp.ParseResults(['']))
 
 class ParsedNumber(ParsedObject):
-    def __init__(self, loc: int, value: int) -> None:
-        super().__init__(loc, value = value)
+    def __init__(self: 'ParsedNumber', source_code: str, source_location: int, source_token: pp.ParseResults, value: int) -> None:
+        super().__init__(source_code, source_location, source_token)
         self.value: int = value
 
 class ParsedEndianess(ParsedObject):
-    def __init__(self, loc: int, endianess: Endianness) -> None:
-        super().__init__(loc, endianess = endianess)
+    def __init__(self: 'ParsedEndianess', source_code: str, source_location: int, source_token: pp.ParseResults, endianess: Endianness) -> None:
+        super().__init__(source_code, source_location, source_token)
         self.endianess: Endianness = endianess
 
 class ParsedAddressSize(ParsedObject):
-    def __init__(self, loc: int, addrsize: int) -> None:
-        super().__init__(loc, addrsize = addrsize)
+    def __init__(self: 'ParsedAddressSize', source_code: str, source_location: int, source_token: pp.ParseResults, addrsize: int) -> None:
+        super().__init__(source_code, source_location, source_token)
         self.addrsize: int = addrsize
 
 class ParsedFixedSize(ParsedObject):
-    def __init__(self, loc: int, size: int) -> None:
-        super().__init__(loc, size = size)
+    def __init__(self: 'ParsedFixedSize', source_code: str, source_location: int, source_token: pp.ParseResults, size: int) -> None:
+        super().__init__(source_code, source_location, source_token)
         self.size: int = size
 
 class ParsedUserDefinedTypename(ParsedObject):
-    def __init__(self, loc: int, name: str) -> None:
-        super().__init__(loc, name = name)
+    def __init__(self: 'ParsedUserDefinedTypename', source_code: str, source_location: int, source_token: pp.ParseResults, name: str) -> None:
+        super().__init__(source_code, source_location, source_token)
         self.name: str = name
 
 class ParsedTypename(ParsedObject):
-    def __init__(self, loc: int, name: str, builtin: bool) -> None:
-        super().__init__(loc, name = name, builtin = builtin)
+    def __init__(self: 'ParsedTypename', source_code: str, source_location: int, source_token: pp.ParseResults, name: str, builtin: bool) -> None:
+        super().__init__(source_code, source_location, source_token)
         self.name: str = name
         self.builtin: bool = builtin
 
 class ParsedQualifiedMemberName(ParsedObject):
-    def __init__(self, loc: int, name: list[ParsedUserDefinedTypename]) -> None:
-        super().__init__(loc, name = name)
+    def __init__(self: 'ParsedQualifiedMemberName', source_code: str, source_location: int, source_token: pp.ParseResults, name: list[ParsedUserDefinedTypename]) -> None:
+        super().__init__(source_code, source_location, source_token)
         self.name: list[ParsedUserDefinedTypename] = name
 
 class ParsedPointerSuffix(ParsedObject):
-    def __init__(self, loc: int) -> None:
-        super().__init__(loc)
+    def __init__(self: 'ParsedPointerSuffix', source_code: str, source_location: int, source_token: pp.ParseResults) -> None:
+        super().__init__(source_code, source_location, source_token)
 
 class ParsedDynamicArraySizeSuffix(ParsedObject):
-    def __init__(self, loc: int) -> None:
-        super().__init__(loc)
+    def __init__(self: 'ParsedDynamicArraySizeSuffix', source_code: str, source_location: int, source_token: pp.ParseResults) -> None:
+        super().__init__(source_code, source_location, source_token)
 
 class ParsedType(ParsedObject): pass
 
 class ParsedScalarType(ParsedType):
-    def __init__(self, loc: int, type: ParsedTypename) -> None:
-        super().__init__(loc, type = type)
+    def __init__(self: 'ParsedScalarType', source_code: str, source_location: int, source_token: pp.ParseResults, type: ParsedTypename) -> None:
+        super().__init__(source_code, source_location, source_token)
         self.type: ParsedTypename = type
 
 class ParsedPointerType(ParsedType):
-    def __init__(self, loc: int, base: ParsedType) -> None:
-        super().__init__(loc, base = base)
+    def __init__(self: 'ParsedPointerType', source_code: str, source_location: int, source_token: pp.ParseResults, base: ParsedType) -> None:
+        super().__init__(source_code, source_location, source_token)
         self.base: ParsedType = base
 
 class ParsedArrayType(ParsedType):
-    def __init__(self, loc: int, base: ParsedType, size: ParsedNumber | ParsedQualifiedMemberName | ParsedDynamicArraySizeSuffix) -> None:
-        super().__init__(loc, base = base, size = size)
+    def __init__(self: 'ParsedArrayType', source_code: str, source_location: int, source_token: pp.ParseResults, base: ParsedType, size: ParsedNumber | ParsedQualifiedMemberName | ParsedDynamicArraySizeSuffix) -> None:
+        super().__init__(source_code, source_location, source_token)
         self.base: ParsedType = base
         self.size: ParsedNumber | ParsedQualifiedMemberName | ParsedDynamicArraySizeSuffix = size
 
 class ParsedStructMember(ParsedObject):
     def __init__(
             self,
-            loc: int,
+            source_code: str,
+            source_location: int,
+            source_token: pp.ParseResults,
             name: ParsedUserDefinedTypename,
             type: ParsedType,
             endianess: ParsedEndianess | None,
             addrsize: ParsedAddressSize | None,
             fixedsize: ParsedFixedSize | None,
     ) -> None:
-        super().__init__(
-            loc,
-            name = name,
-            type = type,
-            endianess = endianess,
-            addrsize = addrsize,
-            fixedsize = fixedsize
-        )
+        super().__init__(source_code, source_location, source_token)
         self.name: ParsedUserDefinedTypename = name
         self.type: ParsedType = type
         self.endianess: ParsedEndianess | None = endianess
@@ -133,14 +134,16 @@ class ParsedStructMember(ParsedObject):
         self.fixedsize: ParsedFixedSize | None = fixedsize
 
 class ParsedStructBody(ParsedObject):
-    def __init__(self, loc: int, members: list[ParsedStructMember]) -> None:
-        super().__init__(loc, members = members)
+    def __init__(self: 'ParsedStructBody', source_code: str, source_location: int, source_token: pp.ParseResults, members: list[ParsedStructMember]) -> None:
+        super().__init__(source_code, source_location, source_token)
         self.members: list[ParsedStructMember] = members
 
 class ParsedStructDefinition(ParsedType):
     def __init__(
             self,
-            loc: int,
+            source_code: str,
+            source_location: int,
+            source_token: pp.ParseResults,
             parse: bool,
             type: StructType,
             name: str,
@@ -150,17 +153,7 @@ class ParsedStructDefinition(ParsedType):
             endianess: ParsedEndianess | None,
             fixedsize: ParsedFixedSize | None
     ) -> None:
-        super().__init__(
-            loc,
-            parse = parse,
-            type = type,
-            name = name,
-            inline = inline,
-            body = body,
-            addrsize = addrsize,
-            endianess = endianess,
-            fixedsize = fixedsize
-        )
+        super().__init__(source_code, source_location, source_token)
         self.parse: bool = parse
         self.type: StructType = type
         self.name: str = name
@@ -171,9 +164,10 @@ class ParsedStructDefinition(ParsedType):
         self.fixedsize: ParsedFixedSize | None = fixedsize
 
 class ParsedFile(ParsedObject):
-    def __init__(self, loc: int, definitions: list[ParsedStructDefinition]) -> None:
-        super().__init__(loc, definitions = definitions)
+    def __init__(self: 'ParsedFile', source_code: str, source_location: int, source_token: pp.ParseResults, definitions: list[ParsedStructDefinition]) -> None:
+        super().__init__(source_code, source_location, source_token)
         self.definitions: list[ParsedStructDefinition] = definitions
+
 
 class ParserConstructor:
     BULTIIN_TYPES: str = r'((u?int|float|bool)(8|16|32|64|128)|bool|void|addr|ptr|byte|uuid|ipv?[46]|mac|time32|([cl][wu]|[wu][cl]|[clwu])?str|char(8|16|32)?|[uw]?char)'
@@ -196,7 +190,7 @@ class ParserConstructor:
             else:
                 raise pp.ParseException(s, loc, f'Invalid or unparsable number: {toks}')
 
-            return ParsedNumber(loc, value)
+            return ParsedNumber(s, loc, toks, value)
 
         number = pp.Regex(ParserConstructor.NUMBER_PATTERN, re.I)
         number.set_parse_action(action)
@@ -207,7 +201,7 @@ class ParserConstructor:
     def _token_modifier_endianess() -> pp.ParserElement:
         def action(s, loc, toks) -> ParsedEndianess:
             if (res := Endianness.parse(toks[0])) is not None:
-                return ParsedEndianess(loc, res)
+                return ParsedEndianess(s, loc, toks, res)
             else:
                 raise pp.ParseException(s, loc, f'Unknown or invalid endianess/byte order: {toks[0]}')
 
@@ -229,7 +223,7 @@ class ParserConstructor:
             }.get(size_str, None)
 
             if size is not None:
-                return ParsedAddressSize(loc, size)
+                return ParsedAddressSize(s, loc, toks, size)
             else:
                 raise pp.ParseException(s, loc, f'Unknown or invalid address size: {toks[0]}')
 
@@ -241,7 +235,7 @@ class ParserConstructor:
     @staticmethod
     def _token_typename_userdef(token_identifier: pp.ParserElement) -> pp.ParserElement:
         def action(s, loc, toks) -> ParsedUserDefinedTypename:
-            return ParsedUserDefinedTypename(loc, toks.name)
+            return ParsedUserDefinedTypename(s, loc, toks, toks.name)
 
         token_typename_userdef: pp.ParserElement = token_identifier('name')
         token_typename_userdef.set_parse_action(action)
@@ -252,10 +246,10 @@ class ParserConstructor:
     def _token_typename(token_typename_userdef: pp.ParserElement) -> pp.ParserElement:
         def action(s, loc, toks) -> ParsedTypename:
             if 'builtin' in toks[0]:
-                return ParsedTypename(loc, toks[0].builtin, True)
+                return ParsedTypename(s, loc, toks, toks[0].builtin, True)
             elif 'userdef' in toks[0]:
                 name: ParsedUserDefinedTypename = toks[0].userdef
-                return ParsedTypename(loc, name.name, False)
+                return ParsedTypename(s, loc, toks, name.name, False)
             else:
                 raise pp.ParseException(s, loc, f'Invalid type name: {toks}')
 
@@ -269,7 +263,7 @@ class ParserConstructor:
     def _token_qualified_membername(token_typename_userdef: pp.ParserElement, symbol_dot: pp.ParserElement) -> pp.ParserElement:
         def action(s, loc, toks: pp.ParseResults) -> ParsedQualifiedMemberName:
             names: list[ParsedUserDefinedTypename] = toks.as_list()
-            return ParsedQualifiedMemberName(loc, names)
+            return ParsedQualifiedMemberName(s, loc, toks, names)
 
         token_qualified_membername = pp.DelimitedList(token_typename_userdef, symbol_dot)
         token_qualified_membername.set_parse_action(action)
@@ -280,7 +274,7 @@ class ParserConstructor:
     def _token_constraint_fixedsize(symbol_leftangle: pp.ParserElement, token_number: pp.ParserElement, symbol_rightangle: pp.ParserElement) -> pp.ParserElement:
         def action(s, loc, toks) -> ParsedFixedSize:
             number: ParsedNumber = toks[0].value
-            return ParsedFixedSize(loc, number.value)
+            return ParsedFixedSize(s, loc, toks, number.value)
 
         token_fixed_size_constraint = pp.Group(symbol_leftangle + token_number('value') + symbol_rightangle)
         token_fixed_size_constraint.set_parse_action(action)
@@ -308,7 +302,8 @@ class ParserConstructor:
     def _token_array_size(symbol_leftbracket: pp.ParserElement, token_array_dimension: pp.ParserElement, symbol_comma: pp.ParserElement, symbol_rightbracket: pp.ParserElement) -> pp.ParserElement:
         def action(s, loc, toks: pp.ParseResults) -> list[ParsedNumber | ParsedQualifiedMemberName | ParsedDynamicArraySizeSuffix]:
             sizes: list[ParsedNumber | ParsedQualifiedMemberName] | None = toks[0].get('size', None) # type: ignore
-            return [ParsedDynamicArraySizeSuffix(loc)] if len(sizes or []) == 0 else sizes # type: ignore
+
+            return [ParsedDynamicArraySizeSuffix(s, loc, toks)] if len(sizes or []) == 0 else sizes # type: ignore
 
         token_array_size = pp.Group(
             symbol_leftbracket +
@@ -327,7 +322,7 @@ class ParserConstructor:
             for suffixlist in toks.as_list():
                 for suffix in suffixlist:
                     if isinstance(suffix, str) or suffix == '*':
-                        suffixes.append(ParsedPointerSuffix(loc)) # TODO : fix incorrect location
+                        suffixes.append(ParsedPointerSuffix(s, loc, toks)) # TODO : fix incorrect location
                     elif isinstance(suffix, ParsedNumber) or \
                          isinstance(suffix, ParsedQualifiedMemberName) or \
                          isinstance(suffix, ParsedDynamicArraySizeSuffix):
@@ -349,7 +344,7 @@ class ParserConstructor:
             type: StructType = StructType(toks[0].type)
 
             return ParsedStructDefinition(
-                loc,
+                s, loc, toks,
                 False,
                 type,
                 str(uuid.uuid4()), # anonymous struct/union
@@ -383,7 +378,9 @@ class ParserConstructor:
             fixedsize: ParsedFixedSize | None = toks[0].get('fixedsize')
 
             return ParsedStructMember(
+                s,
                 loc,
+                toks,
                 name,
                 type,
                 endianess,
@@ -408,7 +405,7 @@ class ParserConstructor:
     def _token_struct_body(token_struct_member: pp.ParserElement, symbol_leftbrace: pp.ParserElement, symbol_rightbrace: pp.ParserElement) -> pp.ParserElement:
         def action(s, loc, toks) -> ParsedStructBody:
             members: list[ParsedStructMember] = toks[0].members.as_list()
-            return ParsedStructBody(loc, members)
+            return ParsedStructBody(s, loc, toks, members)
 
         token_struct_members = pp.ZeroOrMore(token_struct_member)
         token_struct_body = pp.Group(symbol_leftbrace + token_struct_members('members') + symbol_rightbrace)
@@ -431,7 +428,7 @@ class ParserConstructor:
                 basetype = inline
             elif base := toks[0].get('base'):
                 base: ParsedTypename
-                basetype = ParsedScalarType(loc, base)
+                basetype = ParsedScalarType(s, loc, toks, base)
             else:
                 raise pp.ParseException(s, loc, f'Invalid type identifier: {toks[0]}')
 
@@ -439,9 +436,9 @@ class ParserConstructor:
 
             for suffix in suffixes:
                 if isinstance(suffix, ParsedPointerSuffix):
-                    basetype = ParsedPointerType(suffix.loc, basetype)
+                    basetype = ParsedPointerType(suffix.source_code, suffix.source_location, suffix.source_token, basetype)
                 elif isinstance(suffix, ParsedDynamicArraySizeSuffix) or isinstance(suffix, ParsedNumber) or isinstance(suffix, ParsedQualifiedMemberName):
-                    basetype = ParsedArrayType(suffix.loc, basetype, suffix)
+                    basetype = ParsedArrayType(suffix.source_code, suffix.source_location, suffix.source_token, basetype, suffix)
                 else:
                     raise pp.ParseException(s, loc, f'Invalid type suffix: {suffix}')
 
@@ -472,7 +469,8 @@ class ParserConstructor:
             type: StructType = StructType(toks[0].type)
             name: ParsedUserDefinedTypename = toks[0].name
             body: ParsedStructBody = toks[0].body
-            return ParsedStructDefinition(loc, parse, type, name.name, False, body, addrsize, endianess, fixedsize)
+
+            return ParsedStructDefinition(s, loc, toks, parse, type, name.name, False, body, addrsize, endianess, fixedsize)
 
         token_struct_definition: pp.ParserElement = pp.Group(
             pp.Optional(keyword_parse)('parse') +
@@ -490,9 +488,9 @@ class ParserConstructor:
 
     @staticmethod
     def _token_code_file(token_struct_definition: pp.ParserElement) -> pp.ParserElement:
-        def action(s, loc, toks) -> ParsedFile:
+        def action(s: str, loc: int, toks: pp.ParseResults) -> ParsedFile:
             definitions: list[ParsedStructDefinition] = toks.as_list()
-            return ParsedFile(loc, definitions)
+            return ParsedFile(s, loc, toks, definitions)
 
         # token_code_file = pp.ZeroOrMore(token_struct_definition | token_enum_definition)
         token_code_file = pp.ZeroOrMore(token_struct_definition)
@@ -594,7 +592,13 @@ class LayoutParser():
         self.parser.mayIndexError = True
 
 
-    def __call__(self: 'LayoutParser', string: str) -> list[ParsedFile]:
+    def __call__(self: 'LayoutParser', string: str) -> ParsedFile | None:
         raw: pp.ParseResults = self.parser.parseString(string, parse_all = True)
+        parsed: list[ParsedFile] = raw.as_list()
 
-        return raw.as_list()
+        if len(parsed) == 0:
+            return None
+        elif len(parsed) == 1:
+            return parsed[0]
+        else:
+            raise pp.ParseException(string, 0, f'Multiple ({len(parsed)}) instances of "{type(ParsedFile)}" parsed.')

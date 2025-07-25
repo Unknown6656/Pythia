@@ -11,6 +11,7 @@ import pyparsing as pp
 from parser import LayoutParser, Endianness, ParserConstructor, ParsedFile
 from interpreter import LayoutInterpreter, GlobalInterpreterResult
 from files import PythiaFileInfo, PythiaFiles
+from common import _dump
 
 
 
@@ -229,11 +230,11 @@ async def file_parse(request: Request) -> Response:
         if (file := files[name]) is None:
             return Response(None, 404)
         else:
-            parsed: list[ParsedFile] = parser(code)
-            interpreter = LayoutInterpreter(parsed, Endianness.LITTLE if little_endian else Endianness.BIG, pointer_size)
-            result: GlobalInterpreterResult = interpreter(file.data)
+            if parsed := parser(code):
+                interpreter = LayoutInterpreter(parsed, Endianness.LITTLE if little_endian else Endianness.BIG, pointer_size)
+                result: GlobalInterpreterResult = interpreter(file.data)
 
-            response = result.to_dict()
+                response = result.to_dict()
     except pp.ParseException as e:
         response['errors'] = [{
             'type': 'ParseException',
@@ -243,6 +244,7 @@ async def file_parse(request: Request) -> Response:
             'text': e.line,
         }]
     except Exception as e:
+        _dump(e)
         response['errors'] = [{
             'type': str(type(e)),
             'message': str(e),
@@ -257,5 +259,5 @@ async def file_parse(request: Request) -> Response:
 async def code_syntax() -> Response:
     return success({
         'keywords': f'\\b({ParserConstructor.BULTIIN_TYPES}|struct|union|enum|flags|__([lm]sb|[lb]e|x(86?|16|32|64)))\\b',
-        'comments': r'(#(?:[^#\n]|#\n?)*|//(?:[^\\\n]|\\\n?)*|/\*[^]*?(?:\*/|$))|\bskip\b',
+        'comments': r'(#(?:[^#\n]|#\n?)*|//(?:[^\\\n]|\\\n?)*|/\*[^]*?(?:\*/|$))|\bparse\b',
     })

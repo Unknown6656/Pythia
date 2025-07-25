@@ -1,5 +1,6 @@
 from typing import Any, NoReturn
 from datetime import datetime, timezone
+import traceback
 import functools
 import signal
 import sys
@@ -20,10 +21,22 @@ def _dumps(obj: pp.ParseResults | list | dict | Any | None, indent: int = 1) -> 
         objdict = obj._tokdict
     elif isinstance(obj, pp.results._ParseResultsWithOffset):
         return _dumps(obj.tup[0], indent)
+    elif isinstance(obj, Exception):
+        tb: traceback.TracebackException = traceback.TracebackException.from_exception(obj)
+        obj = ''.join(f'\n{spacing}{line.replace("\r", "")}' for lines in tb.format() for line in lines.split('\n') if len(line) > 0)
     elif isinstance(obj, list):
         objlist = obj
     elif isinstance(obj, dict):
         objdict = obj
+    elif isinstance(obj, str):
+        return f'"{obj}"'
+    elif callable(obj):
+        return f'<function {obj.__name__} at {id(obj):#x}>' # TODO: better handling for functions
+    else:
+        if hasattr(obj, '__dict__'):
+            objdict = obj.__dict__
+        else:
+            pass # TODO: Handle other types
 
     if len(objdict) > 0:
         result += ''.join(
