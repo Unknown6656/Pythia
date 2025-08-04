@@ -6,7 +6,6 @@ import re
 import pyparsing as pp
 
 
-
 MEMBER_DELIMITER: str = '.'
 
 
@@ -42,12 +41,12 @@ class StructType(str, Enum):
 
 class ParsedObject:
     def __init__(self: 'ParsedObject', source_code: str, source_location: int, source_token: pp.ParseResults) -> None:
-        self.lineno: int = pp.lineno(source_location, source_code)
-        self.column: int = pp.col(source_location, source_code)
-        self.length: int = len(str(source_token[0]))
-        self.source_code: str = source_code
-        self.source_location: int = source_location
-        self.source_token: pp.ParseResults = source_token
+        self._source_lineno: int = pp.lineno(source_location, source_code)
+        self._source_column: int = pp.col(source_location, source_code)
+        self._source_length: int = len(str(source_token[0]))
+        self._source_code: str = source_code
+        self._source_location: int = source_location
+        self._source_token: pp.ParseResults = source_token
 
     @staticmethod
     def empty() -> 'ParsedObject': return ParsedObject('', 0, pp.ParseResults(['']))
@@ -170,10 +169,81 @@ class ParsedFile(ParsedObject):
 
 
 class ParserConstructor:
-    BULTIIN_TYPES: str = r'((u?int|float|bool)(8|16|32|64|128)|bool|void|addr|ptr|byte|uuid|ipv?[46]|mac|time32|([cl][wu]|[wu][cl]|[clwu])?str|char(8|16|32)?|[uw]?char)'
-    NUMBER_PATTERN: str = r'\b((?P<dec>[0-9_]+)|(?P<bin>0b[01_]+)|(?P<hex>0x[0-9a-f_]+)|(?P<oct>0o[0-7_]+))\b'
-    SIZE_MODIFIERS: str = r'__x(86?|16|32|64)'
-    BYTE_ORDER_MODIFIERS: str = r'__([lm]sb|[lb]e)'
+    BUILTIN_TYPES: list[str] = [
+        'uint8',
+        'uint16',
+        'uint32',
+        'uint64',
+        'uint128',
+        'int8',
+        'int16',
+        'int32',
+        'int64',
+        'int128',
+        'float16',
+        'float32',
+        'float64',
+        'float128',
+        'bool8',
+        'bool16',
+        'bool32',
+        'bool64',
+        'bool128',
+        'bool',
+        'void',
+        'addr',
+        'bool64',
+        'bool128',
+        'ptr',
+        'byte',
+        'uuid',
+        'ipv4',
+        'bool64',
+        'bool128',
+        'ipv6',
+        'mac',
+        'time32',
+        'str',
+        'cstr',
+        'lstr',
+        'wstr',
+        'ustr',
+        'custr',
+        'lustr',
+        'cwstr',
+        'lwstr',
+        'wcstr',
+        'wlstr',
+        'ucstr',
+        'ulstr',
+        'char',
+        'uchar',
+        'wchar',
+        'char8',
+        'char16',
+        'char32',
+    ]
+    KEYWORDS: list[str] = [
+        'struct',
+        'union',
+        'enum',
+        'flags',
+        'parse',
+        '__x8',
+        '__x16',
+        '__x32',
+        '__x64',
+        '__x86',
+        '__le',
+        '__be',
+        '__lsb',
+        '__msb',
+        *BUILTIN_TYPES,
+    ]
+    BUILTIN_TYPES_PATTERN: str = f'({"|".join(BUILTIN_TYPES)})'
+    NUMBERS_PATTERN: str = r'\b((?P<dec>[0-9_]+)|(?P<bin>0b[01_]+)|(?P<hex>0x[0-9a-f_]+)|(?P<oct>0o[0-7_]+))\b'
+    SIZE_MODIFIERS_PATTERN: str = r'__x(86?|16|32|64)'
+    BYTE_ORDER_MODIFIERS_PATTERN: str = r'__([lm]sb|[lb]e)'
 
 
     @staticmethod
@@ -192,7 +262,7 @@ class ParserConstructor:
 
             return ParsedNumber(s, loc, toks, value)
 
-        number = pp.Regex(ParserConstructor.NUMBER_PATTERN, re.I)
+        number = pp.Regex(ParserConstructor.NUMBERS_PATTERN, re.I)
         number.set_parse_action(action)
 
         return number
@@ -205,7 +275,7 @@ class ParserConstructor:
             else:
                 raise pp.ParseException(s, loc, f'Unknown or invalid endianess/byte order: {toks[0]}')
 
-        endianess = pp.Regex(ParserConstructor.BYTE_ORDER_MODIFIERS, re.I)
+        endianess = pp.Regex(ParserConstructor.BYTE_ORDER_MODIFIERS_PATTERN, re.I)
         endianess.set_parse_action(action)
 
         return endianess
@@ -227,7 +297,7 @@ class ParserConstructor:
             else:
                 raise pp.ParseException(s, loc, f'Unknown or invalid address size: {toks[0]}')
 
-        token_modifier_addrsize = pp.Regex(ParserConstructor.SIZE_MODIFIERS, re.I)
+        token_modifier_addrsize = pp.Regex(ParserConstructor.SIZE_MODIFIERS_PATTERN, re.I)
         token_modifier_addrsize.set_parse_action(action)
 
         return token_modifier_addrsize
@@ -235,7 +305,7 @@ class ParserConstructor:
     @staticmethod
     def _token_typename_userdef(token_identifier: pp.ParserElement) -> pp.ParserElement:
         def action(s, loc, toks) -> ParsedUserDefinedTypename:
-            return ParsedUserDefinedTypename(s, loc, toks, toks.name)
+            return ParsedUserDefinedTypename(s, loc, toks, toks.name or toks.userdef) # TODO: fix this shite
 
         token_typename_userdef: pp.ParserElement = token_identifier('name')
         token_typename_userdef.set_parse_action(action)
@@ -253,7 +323,7 @@ class ParserConstructor:
             else:
                 raise pp.ParseException(s, loc, f'Invalid type name: {toks}')
 
-        token_typename_builtin = pp.Regex(ParserConstructor.BULTIIN_TYPES, re.I)
+        token_typename_builtin = pp.Regex(ParserConstructor.BUILTIN_TYPES_PATTERN, re.I)
         token_typename = pp.Group(token_typename_builtin('builtin') | token_typename_userdef('userdef'))
         token_typename.set_parse_action(action)
 
@@ -274,6 +344,7 @@ class ParserConstructor:
     def _token_constraint_fixedsize(symbol_leftangle: pp.ParserElement, token_number: pp.ParserElement, symbol_rightangle: pp.ParserElement) -> pp.ParserElement:
         def action(s, loc, toks) -> ParsedFixedSize:
             number: ParsedNumber = toks[0].value
+
             return ParsedFixedSize(s, loc, toks, number.value)
 
         token_fixed_size_constraint = pp.Group(symbol_leftangle + token_number('value') + symbol_rightangle)
@@ -375,7 +446,7 @@ class ParserConstructor:
             type: ParsedType = toks[0].type
             endianess: ParsedEndianess | None = toks[0].get('endianess')
             addrsize: ParsedAddressSize | None = toks[0].get('addrsize')
-            fixedsize: ParsedFixedSize | None = toks[0].get('fixedsize')
+            fixedsize: ParsedFixedSize | None = toks[0].fixedsize[0] if 'fixedsize' in toks[0] else None
 
             return ParsedStructMember(
                 s,
@@ -436,9 +507,9 @@ class ParserConstructor:
 
             for suffix in suffixes:
                 if isinstance(suffix, ParsedPointerSuffix):
-                    basetype = ParsedPointerType(suffix.source_code, suffix.source_location, suffix.source_token, basetype)
+                    basetype = ParsedPointerType(suffix._source_code, suffix._source_location, suffix._source_token, basetype)
                 elif isinstance(suffix, ParsedDynamicArraySizeSuffix) or isinstance(suffix, ParsedNumber) or isinstance(suffix, ParsedQualifiedMemberName):
-                    basetype = ParsedArrayType(suffix.source_code, suffix.source_location, suffix.source_token, basetype, suffix)
+                    basetype = ParsedArrayType(suffix._source_code, suffix._source_location, suffix._source_token, basetype, suffix)
                 else:
                     raise pp.ParseException(s, loc, f'Invalid type suffix: {suffix}')
 

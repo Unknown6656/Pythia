@@ -621,10 +621,7 @@ function OutputWindow()
     const { interpreted } = React.useContext(CodeContext);
 
     return <output-window>
-        <details>
-            <summary>result</summary>
-            <OutputStructure structure={interpreted.value}/>
-        </details>
+        <OutputStructure structure={interpreted.value}/>
         <details>
             <summary>interpreted</summary>
             <$ interpreted={interpreted.value}/>

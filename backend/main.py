@@ -258,6 +258,6 @@ async def file_parse(request: Request) -> Response:
 @app.post(f'{BASE_URL}/code/syntax')
 async def code_syntax() -> Response:
     return success({
-        'keywords': f'\\b({ParserConstructor.BULTIIN_TYPES}|struct|union|enum|flags|__([lm]sb|[lb]e|x(86?|16|32|64)))\\b',
+        'keywords': f'\\b({"|".join(ParserConstructor.KEYWORDS)})\\b',
         'comments': r'(#(?:[^#\n]|#\n?)*|//(?:[^\\\n]|\\\n?)*|/\*[^]*?(?:\*/|$))|\bparse\b',
     })

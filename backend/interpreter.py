@@ -14,6 +14,7 @@ from common import toint, unix_to_ISO, timeout, _dump, _dumps
 from parser import (
     MEMBER_DELIMITER,
     Endianness,
+    ParserConstructor,
     StructType,
     ParsedObject,
     ParsedNumber,
@@ -106,7 +107,7 @@ class InterpretedLayout:
     def add_error(self: 'InterpretedLayout', message: str, lineno: int, column: int, text: str | None = None) -> None: pass
 
     @overload
-    def add_error(self: 'InterpretedLayout', message: str, parsed: ParsedObject) -> None: pass
+    def add_error(self: 'InterpretedLayout', message: str, parsed: ParsedObject | None = None) -> None: pass
 
     def add_error(self: 'InterpretedLayout', message: str, *args) -> None: # type: ignore
         lineno: int = -1
@@ -115,9 +116,9 @@ class InterpretedLayout:
 
         if len(args) == 1:
             parsed: ParsedObject = args[0]
-            lineno = parsed.lineno
-            column = parsed.column
-            text = parsed.source_code[parsed.source_location:parsed.source_location + parsed.length]
+            lineno = parsed._source_lineno
+            column = parsed._source_column
+            text = parsed._source_code[parsed._source_location:parsed._source_location + parsed._source_length]
         elif len(args) == 2:
             lineno, column = args
         elif len(args) == 3:
@@ -196,9 +197,9 @@ class InterpreterContext:
 
         if len(args) == 1:
             parsed: ParsedObject = args[0]
-            lineno = parsed.lineno
-            column = parsed.column
-            text = parsed.source_code[parsed.source_location:parsed.source_location + parsed.length]
+            lineno = parsed._source_lineno
+            column = parsed._source_column
+            text = parsed._source_code[parsed._source_location:parsed._source_location + parsed._source_length]
         elif len(args) == 2:
             lineno, column = args
         elif len(args) == 3:
@@ -254,7 +255,7 @@ class InterpreterContext:
                 first: ParsedObject = member_names[name][0].parsed
 
                 for duplicate in member_names[name][1:]:
-                    self.add_error(f'Duplicate member definition "{name}" in "{self.global_name}" (already defined in line {first.lineno}:{first.column}).', duplicate.parsed)
+                    self.add_error(f'Duplicate member definition "{name}" in "{self.global_name}" (already defined in line {first._source_lineno}:{first._source_column}).', duplicate.parsed)
 
         if self.skip:
             layout = InterpretedLayout.skipped(self.global_name, self.name)
@@ -292,9 +293,9 @@ class InterpreterContext:
 
 
 class GlobalInterpreterResult:
-    def __init__(self: 'GlobalInterpreterResult', result: list[InterpretedLayout]) -> None:
+    def __init__(self: 'GlobalInterpreterResult', result: InterpretedLayout) -> None:
         self.errors: list[InterpreterError] = []
-        self.data: list[InterpretedLayout] = result
+        self.data: InterpretedLayout = result
 
         def collect_errors(layout: InterpretedLayout) -> None:
             self.errors.extend(layout.errors)
@@ -302,15 +303,14 @@ class GlobalInterpreterResult:
             for member in layout.members:
                 collect_errors(member)
 
-        for layout in result:
-            collect_errors(layout)
+        collect_errors(result)
 
         self.success: bool = len(self.errors) == 0
 
     def to_dict(self: 'GlobalInterpreterResult') -> dict[str, Any]:
         return {
             'success': self.success,
-            'data': [data.to_dict() for data in self.data],
+            'data': [self.data.to_dict()],
             'errors': [error.to_dict() for error in self.errors]
         }
 
@@ -576,7 +576,7 @@ class LayoutInterpreter():
                 definitions: list[ParsedStructDefinition] = [df for df in self.parsed.definitions if df.name == type_name.name]
 
                 if len(definitions) == 0:
-                    context.add_error(f'The user-defined type "{type_name.name}" cannot be found. Did you forget to define it before using it?', type_name)
+                    context.add_error(f'The user-defined type "{type_name.name}" cannot be found. Did you missspell it?', type_name)
                 elif len(definitions) > 1:
                     context.add_error(f'Multiple user-defined types with name "{type_name}" found. Did you accidentally define it multiple times?', type_name)
                 else:
@@ -621,6 +621,9 @@ class LayoutInterpreter():
             interpreted_member: InterpretedLayout = self._interpret_member(local_context, member.type, member_fixed_size)
             interpreted_members.append(interpreted_member)
 
+            if member.name.name in ParserConstructor.BUILTIN_TYPES:
+                context.add_error(f'Built-in type "{member.name.name}" cannot be used as a type name for user-defined types.', member.name)
+
             if struct_type == StructType.UNION:
                 size = max(size, interpreted_member.size)
             else:
@@ -636,10 +639,13 @@ class LayoutInterpreter():
         )
 
     def __call__(self: 'LayoutInterpreter', data: bytes) -> GlobalInterpreterResult:
-        user_defined_types: dict[str, InterpretedLayout] = {}
-        results: list[InterpretedLayout] = []
+        result: InterpretedLayout = InterpretedLayout.skipped(None, '(no type definition)')
+        definitions: list[ParsedStructDefinition] = [df for df in self.parsed.definitions if df.parse]
 
-        for type_definition in self.parsed.definitions:
+        if len(definitions) == 0 and len(self.parsed.definitions) > 0:
+            result.add_error('No type definition found to parse. Did you forget to add "parse" to your user-defined "struct"/"union"?')
+        else:
+            type_definition: ParsedStructDefinition = definitions[0]
             endianess: Endianness = type_definition.endianess.endianess if type_definition.endianess else self.default_endianness
             address_size: int = type_definition.addrsize.addrsize if type_definition.addrsize else self.default_address_size
             fixed_size: int | None = type_definition.fixedsize.size if type_definition.fixedsize else None
@@ -647,11 +653,11 @@ class LayoutInterpreter():
             context: InterpreterContext = InterpreterContext.global_context(
                 data,
                 type_definition.name,
-                not type_definition.parse,
+                False,
                 endianess,
                 address_size
             )
-            result: InterpretedLayout = context.result(0, 'unknown { ... }', None, [], type_definition)
+            result = context.result(0, 'unknown { ... }', None, [], type_definition)
 
             try:
                 @timeout(seconds = 1)
@@ -668,8 +674,9 @@ class LayoutInterpreter():
                 _dump(e)
                 result.add_error(f'Error interpreting the type definition: {str(e)}', type_definition)
 
-            results.append(result)
-            user_defined_types[result.name] = result
+            if len(definitions) > 1:
+                for type_definition in definitions[1:]:
+                    result.add_error(f'Ignoring additional type definition "{type_definition.name}". Only one type definition with the "parse" keyword is allowed per file.', type_definition)
 
-        return GlobalInterpreterResult(results)
+        return GlobalInterpreterResult(result)
 
