@@ -137,8 +137,24 @@ parse __le __x64 struct ELF_HEADER
     e_shstrndx:     uint16;
 };
 
+__le enum ELF_PROGRAM_HEADER_TYPE : uint32
+{
+    PT_NULL = 0;
+    PT_LOAD = 1;
+    PT_DYNAMIC = 2;
+    PT_INTERP = 3;
+    PT_NOTE = 4;
+    PT_SHLIB = 5;
+    PT_PHDR = 6;
+    PT_TLS = 7;
+    PT_LOOS = 0x60000000;
+    PT_HIOS = 0x6fffffff;
+    PT_LOPROC = 0x70000000;
+    PT_HIPROC = 0x7fffffff;
+};
+
 __le __x64 struct ELF_PROGRAM_HEADER {
-    p_type:         uint32;
+    p_type:         ELF_PROGRAM_HEADER_TYPE;
     p_flags:        uint32;
     p_offset:       ptr;
     p_vaddr:        ptr;

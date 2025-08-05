@@ -6,6 +6,9 @@ import re
 import pyparsing as pp
 
 
+from common import _dumps
+
+
 MEMBER_DELIMITER: str = '.'
 
 
@@ -43,7 +46,7 @@ class ParsedObject:
     def __init__(self: 'ParsedObject', source_code: str, source_location: int, source_token: pp.ParseResults) -> None:
         self._source_lineno: int = pp.lineno(source_location, source_code)
         self._source_column: int = pp.col(source_location, source_code)
-        self._source_length: int = len(str(source_token[0]))
+        self._source_length: int = len(str(source_token[0])) if len(source_token) else 0
         self._source_code: str = source_code
         self._source_location: int = source_location
         self._source_token: pp.ParseResults = source_token
@@ -162,19 +165,53 @@ class ParsedStructDefinition(ParsedType):
         self.endianess: ParsedEndianess | None = endianess
         self.fixedsize: ParsedFixedSize | None = fixedsize
 
-class ParsedFile(ParsedObject):
-    def __init__(self: 'ParsedFile', source_code: str, source_location: int, source_token: pp.ParseResults, definitions: list[ParsedStructDefinition]) -> None:
+class ParsedEnumMember(ParsedObject):
+    def __init__(self, source_code: str, source_location: int, source_token: pp.ParseResults, name: str, value: ParsedNumber | None) -> None:
         super().__init__(source_code, source_location, source_token)
-        self.definitions: list[ParsedStructDefinition] = definitions
+        self.name: str = name
+        self.value: ParsedNumber | None = value
+
+class ParsedEnumBody(ParsedObject):
+    def __init__(self: 'ParsedEnumBody', source_code: str, source_location: int, source_token: pp.ParseResults, members: list[ParsedEnumMember]) -> None:
+        super().__init__(source_code, source_location, source_token)
+        self.members: list[ParsedEnumMember] = members
+
+class ParsedEnumDefinition(ParsedType):
+    def __init__(
+            self,
+            source_code: str,
+            source_location: int,
+            source_token: pp.ParseResults,
+            flags: bool,
+            name: str,
+            base_type: ParsedTypename | None,
+            body: ParsedEnumBody,
+            addrsize: ParsedAddressSize | None,
+            endianess: ParsedEndianess | None
+    ) -> None:
+        super().__init__(source_code, source_location, source_token)
+        self.name: str = name
+        self.flags: bool = flags
+        self.body: ParsedEnumBody = body
+        self.base_type: ParsedTypename | None = base_type
+        self.addrsize: ParsedAddressSize | None = addrsize
+        self.endianess: ParsedEndianess | None = endianess
+
+class ParsedFile(ParsedObject):
+    def __init__(self: 'ParsedFile', source_code: str, source_location: int, source_token: pp.ParseResults, definitions: list[ParsedStructDefinition | ParsedEnumDefinition]) -> None:
+        super().__init__(source_code, source_location, source_token)
+        self.definitions: list[ParsedStructDefinition | ParsedEnumDefinition] = definitions
 
 
 class ParserConstructor:
     BUILTIN_TYPES: list[str] = [
+        'uint',
         'uint8',
         'uint16',
         'uint32',
         'uint64',
         'uint128',
+        'int',
         'int8',
         'int16',
         'int32',
@@ -558,13 +595,80 @@ class ParserConstructor:
         return token_struct_definition
 
     @staticmethod
-    def _token_code_file(token_struct_definition: pp.ParserElement) -> pp.ParserElement:
+    def _token_enum_member(token_typename: pp.ParserElement, symbol_equal: pp.ParserElement, token_number: pp.ParserElement, symbol_semicolon: pp.ParserElement) -> pp.ParserElement:
+        def action(s, loc, toks) -> ParsedEnumMember:
+            name: str = toks[0].name
+            value: ParsedNumber | None = toks[0].value if 'value' in toks[0] else None
+
+            print('ENUM MEMBER',_dumps(toks[0]))
+            return ParsedEnumMember(s, loc, toks, name, value)
+
+        token_enum_member = pp.Group(
+            token_typename('name') +
+            pp.Optional(symbol_equal + token_number('value')) +
+            symbol_semicolon
+        )
+        token_enum_member.set_parse_action(action)
+
+        return token_enum_member
+
+    @staticmethod
+    def _token_enum_body(token_enum_member: pp.ParserElement, symbol_leftbrace: pp.ParserElement, symbol_rightbrace: pp.ParserElement) -> pp.ParserElement:
+        def action(s, loc, toks) -> ParsedEnumBody:
+            members: list[ParsedEnumMember] = toks[0].members.as_list()
+            return ParsedEnumBody(s, loc, toks, members)
+
+        token_enum_members = pp.ZeroOrMore(token_enum_member)
+        token_enum_body = pp.Group(symbol_leftbrace + token_enum_members('members') + symbol_rightbrace)
+        token_enum_body.set_parse_action(action)
+
+        return token_enum_body
+
+    @staticmethod
+    def _token_enum_definition(
+            token_modifier_endianess: pp.ParserElement,
+            token_modifier_addrsize: pp.ParserElement,
+            keyword_flags: pp.ParserElement,
+            keyword_enum: pp.ParserElement,
+            token_typename: pp.ParserElement,
+            token_typename_userdef: pp.ParserElement,
+            token_enum_body: pp.ParserElement,
+            symbol_colon: pp.ParserElement,
+            symbol_semicolon: pp.ParserElement
+    ) -> pp.ParserElement:
+        def action(s, loc, toks) -> ParsedEnumDefinition:
+            flags: bool = 'flags' in toks[0]
+            endianess: ParsedEndianess | None = toks[0].get('endianess')
+            addrsize: ParsedAddressSize | None = toks[0].get('addrsize')
+            name: ParsedUserDefinedTypename = toks[0].name
+            base: ParsedTypename | None = toks[0].get('base_type')
+            body: ParsedEnumBody = toks[0].body
+
+            return ParsedEnumDefinition(s, loc, toks, flags, name.name, base, body, addrsize, endianess)
+
+        token_enum_definition: pp.ParserElement = pp.Group(
+            pp.Optional(token_modifier_endianess)('endianess') +
+            pp.Optional(token_modifier_addrsize)('addrsize') +
+            pp.Optional(keyword_flags)('flags') +
+            keyword_enum('type') +
+            token_typename_userdef('name') +
+            pp.Optional(
+                symbol_colon + token_typename('base_type')
+            ) +
+            token_enum_body('body') +
+            symbol_semicolon
+        )
+        token_enum_definition.set_parse_action(action)
+
+        return token_enum_definition
+
+    @staticmethod
+    def _token_code_file(token_struct_definition: pp.ParserElement, token_enum_definition: pp.ParserElement) -> pp.ParserElement:
         def action(s: str, loc: int, toks: pp.ParseResults) -> ParsedFile:
-            definitions: list[ParsedStructDefinition] = toks.as_list()
+            definitions: list[ParsedStructDefinition | ParsedEnumDefinition] = toks.as_list()
             return ParsedFile(s, loc, toks, definitions)
 
-        # token_code_file = pp.ZeroOrMore(token_struct_definition | token_enum_definition)
-        token_code_file = pp.ZeroOrMore(token_struct_definition)
+        token_code_file = pp.ZeroOrMore(token_struct_definition | token_enum_definition)
         token_code_file.set_parse_action(action)
 
         return token_code_file
@@ -628,28 +732,19 @@ class LayoutParser():
             symbol_semicolon
         )
 
-        # token_enum_member = pp.Group(
-        #     token_identifier('name') +
-        #     pp.Optional(
-        #         symbol_equal +
-        #         token_number('value')
-        #     ) +
-        #     symbol_semicolon
-        # )
-
-        # token_enum_members = pp.ZeroOrMore(token_enum_member)
-
-        # token_enum_body = pp.Group(symbol_leftbrace + token_enum_members('members') + symbol_rightbrace)
-
-        # token_enum_definition: pp.ParserElement = pp.Group(
-        #     pp.Optional(token_modifier_endianess)('endianess') +
-        #     pp.Optional(token_modifier_addrsize)('addrsize') +
-        #     pp.Optional(keyword_flags)('flags') +
-        #     keyword_enum +
-        #     token_typename_userdef('name') +
-        #     token_enum_body('body') +
-        #     symbol_semicolon
-        # )
+        token_enum_member: pp.ParserElement = ParserConstructor._token_enum_member(token_identifier, symbol_equal, token_number, symbol_semicolon)
+        token_enum_body: pp.ParserElement = ParserConstructor._token_enum_body(token_enum_member, symbol_leftbrace, symbol_rightbrace)
+        token_enum_definition: pp.ParserElement = ParserConstructor._token_enum_definition(
+            token_modifier_endianess,
+            token_modifier_addrsize,
+            keyword_flags,
+            keyword_enum,
+            token_typename,
+            token_typename_userdef,
+            token_enum_body,
+            symbol_colon,
+            symbol_semicolon
+        )
 
         token_inline_struct_definition: pp.ParserElement = ParserConstructor._token_inline_struct_definition(keyword_struct, keyword_union, token_struct_body)
         token_array_dimension: pp.ParserElement = ParserConstructor._token_array_dimension(token_number, token_qualified_membername)
@@ -657,7 +752,7 @@ class LayoutParser():
         token_type_suffix: pp.ParserElement = ParserConstructor._token_type_suffix(symbol_pointer, token_array_size)
         token_type_identifier: pp.Forward = ParserConstructor._token_type_identifier(token_type_identifier, token_inline_struct_definition, token_typename, token_type_suffix)
 
-        self.parser: pp.ParserElement = ParserConstructor._token_code_file(token_struct_definition)
+        self.parser: pp.ParserElement = ParserConstructor._token_code_file(token_struct_definition, token_enum_definition)
         self.parser.ignore_whitespace()
         self.parser.ignore(comment)
         self.parser.mayIndexError = True

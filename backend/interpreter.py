@@ -18,21 +18,18 @@ from parser import (
     StructType,
     ParsedObject,
     ParsedNumber,
-    ParsedEndianess,
-    ParsedAddressSize,
-    ParsedFixedSize,
     ParsedUserDefinedTypename,
     ParsedTypename,
     ParsedQualifiedMemberName,
-    ParsedPointerSuffix,
     ParsedDynamicArraySizeSuffix,
     ParsedType,
     ParsedScalarType,
     ParsedPointerType,
     ParsedArrayType,
     ParsedStructMember,
-    ParsedStructBody,
     ParsedStructDefinition,
+    ParsedEnumDefinition,
+    ParsedEnumMember,
     ParsedFile,
 )
 
@@ -399,6 +396,12 @@ class LayoutInterpreter():
         elif typename == 'uint128':
             raw = grab_bytes(16)
             repr, data = toint(raw, 128, False)
+        elif typename == 'int':
+            raw = grab_bytes(address_size)
+            repr, data = toint(raw, address_size * 8, True)
+        elif typename == 'uint':
+            raw = grab_bytes(address_size)
+            repr, data = toint(raw, address_size * 8, False)
         elif typename in ['addr', 'ptr']:
             raw = grab_bytes(address_size)
             data = toint(raw, address_size * 8, False)[1]
@@ -573,7 +576,7 @@ class LayoutInterpreter():
             if type_name.builtin:
                 return self._interpret_builtin_type(context, type_name, fixed_size)
             else:
-                definitions: list[ParsedStructDefinition] = [df for df in self.parsed.definitions if df.name == type_name.name]
+                definitions: list[ParsedStructDefinition | ParsedEnumDefinition] = [df for df in self.parsed.definitions if df.name == type_name.name]
 
                 if len(definitions) == 0:
                     context.add_error(f'The user-defined type "{type_name.name}" cannot be found. Did you missspell it?', type_name)
@@ -587,10 +590,53 @@ class LayoutInterpreter():
             return self._interpret_array(context, type, fixed_size)
         elif isinstance(type, ParsedStructDefinition):
             return self._interpret_struct(context, type, fixed_size)
+        elif isinstance(type, ParsedEnumDefinition):
+            return self._interpret_enum(context, type, fixed_size)
         else:
             context.add_error(f'Unknown type "{type}" in "{context.global_name}".', type)
 
         return context.result(0, 'unknown { ... }', None, [], type)
+
+    def _interpret_enum(self: 'LayoutInterpreter', context: InterpreterContext, enum: ParsedEnumDefinition, fixed_size: int | None) -> InterpretedLayout:
+        context = context.local(
+            0,
+            enum.name,
+            False,
+            enum.endianess.endianess if enum.endianess else None,
+            enum.addrsize.addrsize if enum.addrsize else None
+        )
+        enum_map: dict[int, ParsedEnumMember] = {}
+        last_value: int = -1
+
+        for member in enum.body.members:
+            value: ParsedNumber | None = member.value
+
+            if not value:
+                last_value += 1
+                enum_map[last_value] = member
+            elif value.value in enum_map:
+                context.add_error(f'Duplicate enum member "{member.name}" with value {value.value} in enum "{enum.name}".', value)
+            else:
+                last_value = value.value
+                enum_map[value.value] = member
+
+        base_type: ParsedTypename = enum.base_type or ParsedTypename('', 0, pp.ParseResults(['']), 'int', True) # parse as platform-dependent int as default
+        parsed_value: InterpretedLayout = self._interpret_builtin_type(context, base_type, fixed_size)
+        parsed_repr: str = parsed_value.repr or '(null)'
+
+        if parsed_value.data in enum_map:
+            parsed_repr = f'{enum.name}{MEMBER_DELIMITER}{enum_map[parsed_value.data].name}'
+
+        return context.result(
+            parsed_value.size,
+            parsed_repr,
+            parsed_value.data,
+            [],
+            enum
+        )
+
+
+
 
     def _interpret_struct(
             self: 'LayoutInterpreter',
@@ -640,7 +686,7 @@ class LayoutInterpreter():
 
     def __call__(self: 'LayoutInterpreter', data: bytes) -> GlobalInterpreterResult:
         result: InterpretedLayout = InterpretedLayout.skipped(None, '(no type definition)')
-        definitions: list[ParsedStructDefinition] = [df for df in self.parsed.definitions if df.parse]
+        definitions: list[ParsedStructDefinition] = [df for df in self.parsed.definitions if isinstance(df, ParsedStructDefinition) and df.parse]
 
         if len(definitions) == 0 and len(self.parsed.definitions) > 0:
             result.add_error('No type definition found to parse. Did you forget to add "parse" to your user-defined "struct"/"union"?')

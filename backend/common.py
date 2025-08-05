@@ -28,8 +28,16 @@ def _dumps(obj: pp.ParseResults | list | dict | Any | None, indent: int = 1) -> 
         objlist = obj
     elif isinstance(obj, dict):
         objdict = obj
-    elif isinstance(obj, str):
-        return f'"{obj}"'
+    elif isinstance(obj, str) or isinstance(obj, bytes):
+        length: int = len(obj)
+
+        if isinstance(obj, str):
+            obj = '\'' + obj
+
+        string: str = str(obj).replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t') + '\''
+        string = f'({type(obj).__name__}:{length}) {string}'
+
+        return f'{string[:50]}...\'' if len(string) > 53 else string
     elif callable(obj):
         return f'<function {obj.__name__} at {id(obj):#x}>' # TODO: better handling for functions
     else:

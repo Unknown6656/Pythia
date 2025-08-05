@@ -19,3 +19,25 @@
 - [ ] jump to address in inspector
 - [ ] jump by 1/2/4/8/16/... bytes in inspector
 - [ ] performance improvements
+- [ ] fix the following:
+        ```
+        parse __x8 struct S {
+            x : int[10];
+        };
+        ```
+        does not parse `int` as 8-bit integer
+- [ ] fix the following:
+        ```
+        __le enum E : int32 {
+            A = 0;
+            B;
+            C;
+            ELF = 0x7f454c46;
+            NOPE;
+        };
+
+        parse __le struct S {
+            x : E[10];
+        };
+        ```
+        throws the syntax error `10` times, but interprets everything correctly.
