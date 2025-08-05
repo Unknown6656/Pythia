@@ -1,8 +1,8 @@
 # Open TODOs
 
-- [ ] `x86`/`x64` assembly
-- [ ] better error messages, esp. incl. code line/token/symbol
-- [ ] mapping of symbol to code line/token
+- [x] `x86`/`x64` assembly
+- [x] better error messages, esp. incl. code line/token/symbol
+- [x] mapping of symbol to code line/token
 - [ ] `float16` support
 - [ ] `float128` support
 - [ ] `utf32` support
