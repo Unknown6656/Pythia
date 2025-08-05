@@ -51,6 +51,10 @@ type_name_builtin   := 'void'                   // 0 byte wide structure
                      | 'bool32'                 // 32 bit wide boolean (4 bytes)
                      | 'bool64'                 // 64 bit wide boolean (8 bytes)
                      | 'bool128'                // 128 bit wide boolean (16 bytes)
+                     | 'int'                    // a signed integer with a size depending on the environment, i.e.:
+                                                //  32 bit in an '__x32' environment, 64 bit in an '__x64' environment, etc.
+                     | 'uint'                   // an unsigned integer with a size depending on the environment, i.e.:
+                                                //  32 bit in an '__x32' environment, 64 bit in an '__x64' environment, etc.
                      | 'int8'                   // 8 bit wide signed integer
                      | 'int16'                  // 16 bit wide signed integer
                      | 'int32'                  // 32 bit wide signed integer
@@ -61,7 +65,7 @@ type_name_builtin   := 'void'                   // 0 byte wide structure
                      | 'uint32'                 // 32 bit wide unsigned integer
                      | 'uint64'                 // 64 bit wide unsigned integer
                      | 'uint128'                // 128 bit wide unsigned integer
-                     | 'addr' | 'ptr'           // an unsigned integer with a size depending on the environment, i.e.:
+                     | 'addr' | 'ptr'           // a void* pointer with the address size depending on the environment, i.e.:
                                                 //  32 bit in an '__x32' environment, 64 bit in an '__x64' environment, etc.
                      | 'float8'                 // 8 bit wide IEEE754 floating point number
                      | 'float16'                // 16 bit wide IEEE754 floating point number
@@ -111,7 +115,7 @@ enum_member         := identifier ['=' number] ';'
 
 enum_body           := '{' enum_member* '}'
 
-enum_definition     := [modifier_endianess] [modifier_addr_size] ['flags'] 'enum' identifier ':' type_name enum_body ';'
+enum_definition     := [modifier_endianess] [modifier_addr_size] ['flags'] 'enum' identifier [':' type_name_builtin] enum_body ';'
 
 type_definition     := struct_definition
                      | enum_definition
