@@ -347,21 +347,24 @@ class LayoutInterpreter():
             raw = b''
             repr = '(void)'
             data = None
-        elif typename in ['bool', 'boolean', 'bool8']:
+        elif typename in ['bool', 'boolean']:
+            raw = grab_bytes(address_size)
+            repr, data = ('true', True) if toint(raw, address_size * 8, True)[1] != 0 else ('false', False)
+        elif typename == 'bool8':
             raw = grab_bytes(1)
             repr, data = ('true', True) if raw[0] != 0 else ('false', False)
         elif typename == 'bool16':
             raw = grab_bytes(2)
-            repr, data = ('true', True) if toint(raw, 16, False) != 0 else ('false', False)
+            repr, data = ('true', True) if toint(raw, 16, False)[1] != 0 else ('false', False)
         elif typename == 'bool32':
             raw = grab_bytes(4)
-            repr, data = ('true', True) if toint(raw, 32, False) != 0 else ('false', False)
+            repr, data = ('true', True) if toint(raw, 32, False)[1] != 0 else ('false', False)
         elif typename == 'bool64':
             raw = grab_bytes(8)
-            repr, data = ('true', True) if toint(raw, 64, False) != 0 else ('false', False)
+            repr, data = ('true', True) if toint(raw, 64, False)[1] != 0 else ('false', False)
         elif typename == 'bool128':
             raw = grab_bytes(16)
-            repr, data = ('true', True) if toint(raw, 128, False) != 0 else ('false', False)
+            repr, data = ('true', True) if toint(raw, 128, False)[1] != 0 else ('false', False)
         elif typename == 'int8':
             raw = grab_bytes(1)
             repr, data = toint(raw, 8, True)

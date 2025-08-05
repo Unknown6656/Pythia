@@ -45,47 +45,49 @@ main_parse_point    := 'parse'
 
 type_name_userdef   := identifier
 
-type_name_builtin   := 'void'                   // 0 byte wide structure
-                     | 'bool8' | 'bool'         // 8 bit wide boolean (1 byte)
-                     | 'bool16'                 // 16 bit wide boolean (2 bytes)
-                     | 'bool32'                 // 32 bit wide boolean (4 bytes)
-                     | 'bool64'                 // 64 bit wide boolean (8 bytes)
-                     | 'bool128'                // 128 bit wide boolean (16 bytes)
-                     | 'int'                    // a signed integer with a size depending on the environment, i.e.:
-                                                //  32 bit in an '__x32' environment, 64 bit in an '__x64' environment, etc.
-                     | 'uint'                   // an unsigned integer with a size depending on the environment, i.e.:
-                                                //  32 bit in an '__x32' environment, 64 bit in an '__x64' environment, etc.
-                     | 'int8'                   // 8 bit wide signed integer
-                     | 'int16'                  // 16 bit wide signed integer
-                     | 'int32'                  // 32 bit wide signed integer
-                     | 'int64'                  // 64 bit wide signed integer
-                     | 'int128'                 // 128 bit wide signed integer
-                     | 'uint8' | 'byte'         // 8 bit wide unsigned integer
-                     | 'uint16'                 // 16 bit wide unsigned integer
-                     | 'uint32'                 // 32 bit wide unsigned integer
-                     | 'uint64'                 // 64 bit wide unsigned integer
-                     | 'uint128'                // 128 bit wide unsigned integer
-                     | 'addr' | 'ptr'           // a void* pointer with the address size depending on the environment, i.e.:
-                                                //  32 bit in an '__x32' environment, 64 bit in an '__x64' environment, etc.
-                     | 'float8'                 // 8 bit wide IEEE754 floating point number
-                     | 'float16'                // 16 bit wide IEEE754 floating point number
-                     | 'float32'                // 32 bit wide IEEE754 floating point number
-                     | 'float64'                // 64 bit wide IEEE754 floating point number
-                     | 'float128'               // 128 bit wide IEEE754 floating point number
-                     | 'uuid'                   // 128 bit wide UUID (RFC 9562)
-                     | 'ipv4' | 'ip4'           // 32 bit wide IPv4 address
-                     | 'ipv6' | 'ip6'           // 128 bit wide IPv6 address
-                     | 'time32'                 // 32 bit wide unix epoch timestamp
-                     | 'char8' | 'char'         // 8 bit wide ISO 8859 (extended ASCII) character (mostly compatible with CP-1252)
-                     | 'char16' | 'wchar'       // 16 bit wide UTF-16 character
-                     | 'char32'                 // 32 bit wide UTF-32 character
-                     | 'uchar'                  // variable width UTF-8 character
-                     | 'str' | 'cstr'           // zero-terminated ISO 8859 (extended ASCII) string
-                     | 'wstr' | 'cwstr' | 'wcstr'// zero-terminated UTF-16 string
-                     | 'ustr' | 'custr' | 'ucstr'// zero-terminated UTF-8 string
-                     | 'lstr'                   // length-prefixed ISO 8859 (extended ASCII) string
-                     | 'wlstr' | 'lwstr'        // length-prefixed UTF-16 string
-                     | 'ulstr' | 'lustr'        // length-prefixed UTF-8 string
+type_name_builtin   := 'void'                       // 0 byte wide structure
+                     | 'bool'                       // boolean value with a size depending on the environment, i.e.:
+                                                    //     32 bit in an '__x32' environment, 64 bit in an '__x64' environment, etc.
+                     | 'bool8'                      // 8 bit wide boolean (1 byte)
+                     | 'bool16'                     // 16 bit wide boolean (2 bytes)
+                     | 'bool32'                     // 32 bit wide boolean (4 bytes)
+                     | 'bool64'                     // 64 bit wide boolean (8 bytes)
+                     | 'bool128'                    // 128 bit wide boolean (16 bytes)
+                     | 'int'                        // signed integer with a size depending on the environment, i.e.:
+                                                    //     32 bit in an '__x32' environment, 64 bit in an '__x64' environment, etc.
+                     | 'uint'                       // unsigned integer with a size depending on the environment, i.e.:
+                                                    //     32 bit in an '__x32' environment, 64 bit in an '__x64' environment, etc.
+                     | 'int8'                       // 8 bit wide signed integer
+                     | 'int16'                      // 16 bit wide signed integer
+                     | 'int32'                      // 32 bit wide signed integer
+                     | 'int64'                      // 64 bit wide signed integer
+                     | 'int128'                     // 128 bit wide signed integer
+                     | 'uint8' | 'byte'             // 8 bit wide unsigned integer
+                     | 'uint16'                     // 16 bit wide unsigned integer
+                     | 'uint32'                     // 32 bit wide unsigned integer
+                     | 'uint64'                     // 64 bit wide unsigned integer
+                     | 'uint128'                    // 128 bit wide unsigned integer
+                     | 'addr' | 'ptr'               // void* pointer with the address size depending on the environment, i.e.:
+                                                    //     32 bit in an '__x32' environment, 64 bit in an '__x64' environment, etc.
+                     | 'float8'                     // 8 bit wide IEEE754 floating point number
+                     | 'float16'                    // 16 bit wide IEEE754 floating point number
+                     | 'float32'                    // 32 bit wide IEEE754 floating point number
+                     | 'float64'                    // 64 bit wide IEEE754 floating point number
+                     | 'float128'                   // 128 bit wide IEEE754 floating point number
+                     | 'uuid'                       // 128 bit wide UUID (RFC 9562)
+                     | 'ipv4' | 'ip4'               // 32 bit wide IPv4 address
+                     | 'ipv6' | 'ip6'               // 128 bit wide IPv6 address
+                     | 'time32'                     // 32 bit wide unix epoch timestamp
+                     | 'char8' | 'char'             // 8 bit wide ISO 8859 (extended ASCII) character (mostly compatible with CP-1252)
+                     | 'char16' | 'wchar'           // 16 bit wide UTF-16 character
+                     | 'char32'                     // 32 bit wide UTF-32 character
+                     | 'uchar'                      // variable width UTF-8 character
+                     | 'str' | 'cstr'               // zero-terminated ISO 8859 (extended ASCII) string
+                     | 'wstr' | 'cwstr' | 'wcstr'   // zero-terminated UTF-16 string
+                     | 'ustr' | 'custr' | 'ucstr'   // zero-terminated UTF-8 string
+                     | 'lstr'                       // length-prefixed ISO 8859 (extended ASCII) string
+                     | 'wlstr' | 'lwstr'            // length-prefixed UTF-16 string
+                     | 'ulstr' | 'lustr'            // length-prefixed UTF-8 string
 
 type_name           := type_name_userdef
                      | type_name_builtin
