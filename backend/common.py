@@ -50,6 +50,7 @@ def _dumps(obj: pp.ParseResults | list | dict | Any | None, indent: int = 1) -> 
         result += ''.join(
             f'\n{spacing}- {key}: {_dumps(value, indent + 1)}'
             for key, value in objdict.items()
+            if not str(key).startswith('_source') and not callable(value)
         )
     elif len(objlist) > 0:
         result += ''.join(

@@ -595,7 +595,7 @@ class ParserConstructor:
         return token_struct_definition
 
     @staticmethod
-    def _token_enum_member(token_typename: pp.ParserElement, symbol_equal: pp.ParserElement, token_number: pp.ParserElement, symbol_semicolon: pp.ParserElement) -> pp.ParserElement:
+    def _token_enum_member(token_typename_userdef: pp.ParserElement, symbol_equal: pp.ParserElement, token_number: pp.ParserElement, symbol_semicolon: pp.ParserElement) -> pp.ParserElement:
         def action(s, loc, toks) -> ParsedEnumMember:
             name: str = toks[0].name
             value: ParsedNumber | None = toks[0].value if 'value' in toks[0] else None
@@ -604,7 +604,7 @@ class ParserConstructor:
             return ParsedEnumMember(s, loc, toks, name, value)
 
         token_enum_member = pp.Group(
-            token_typename('name') +
+            token_typename_userdef('name') +
             pp.Optional(symbol_equal + token_number('value')) +
             symbol_semicolon
         )
@@ -732,7 +732,7 @@ class LayoutParser():
             symbol_semicolon
         )
 
-        token_enum_member: pp.ParserElement = ParserConstructor._token_enum_member(token_identifier, symbol_equal, token_number, symbol_semicolon)
+        token_enum_member: pp.ParserElement = ParserConstructor._token_enum_member(token_typename_userdef, symbol_equal, token_number, symbol_semicolon)
         token_enum_body: pp.ParserElement = ParserConstructor._token_enum_body(token_enum_member, symbol_leftbrace, symbol_rightbrace)
         token_enum_definition: pp.ParserElement = ParserConstructor._token_enum_definition(
             token_modifier_endianess,

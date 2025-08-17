@@ -124,3 +124,10 @@ type_definition     := struct_definition
 
 code_file           := type_definition*
 ```
+
+### Examples
+The following are example snippets of the Pythia coding language:
+
+```
+[TODO]
+```

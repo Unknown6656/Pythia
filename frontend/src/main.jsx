@@ -153,7 +153,8 @@ __le enum ELF_PROGRAM_HEADER_TYPE : uint32
     PT_HIPROC = 0x7fffffff;
 };
 
-__le __x64 struct ELF_PROGRAM_HEADER {
+__le __x64 struct ELF_PROGRAM_HEADER
+{
     p_type:         ELF_PROGRAM_HEADER_TYPE;
     p_flags:        uint32;
     p_offset:       ptr;
@@ -164,7 +165,8 @@ __le __x64 struct ELF_PROGRAM_HEADER {
     p_align:        uint64;
 };
 
-__le __x64 struct ELF_SECTION_HEADER {
+__le __x64 struct ELF_SECTION_HEADER
+{
     sh_name:        uint32;
     sh_type:        uint32;
     sh_flags:       uint64;

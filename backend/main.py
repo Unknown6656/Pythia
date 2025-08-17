@@ -16,7 +16,7 @@ from common import _dump
 
 
 
-print('\033c', end='')#clear terminal. only for debug reasons
+print('\x1b[m\x1b[3J\x1b[!p\x1bc', end='')#clear terminal. only for debug reasons
 
 
 BASE_URL = '/api'
